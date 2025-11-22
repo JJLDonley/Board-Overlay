@@ -223,9 +223,7 @@ function updateSidePanelVisibility() {
     if (obsControls) obsControls.style.display = obsVisible ? "" : "none";
     if (chatDiv) chatDiv.style.display = chatVisible ? "" : "none";
     if (sidePanel) {
-        sidePanel.style.display = (obsVisible || chatVisible)
-            ? ""
-            : "none";
+        sidePanel.style.display = (obsVisible || chatVisible) ? "" : "none";
     }
 }
 
@@ -523,13 +521,7 @@ function main() {
                 e.preventDefault();
                 // Clear only the drawing layer
                 if (window.drawingLayer) {
-                    window.drawingLayer.clearCanvas();
-                }
-                // Send clear drawing command to viewer
-                if (window.networkManager && !window.isViewerMode) {
-                    window.networkManager.send({
-                        action: "clear-drawing",
-                    });
+                    window.drawingLayer.clearCanvas(true);
                 }
             } else if (e.key === " " || e.code === "Space") {
                 e.preventDefault();
@@ -538,33 +530,9 @@ function main() {
                 }
                 // Also clear the drawing layer
                 if (window.drawingLayer) {
-                    window.drawingLayer.clearCanvas();
+                    window.drawingLayer.clearCanvas(false);
                 }
 
-                // Reset tool to ALTERNATING to clear pen-active class
-                if (window.setCurrentTool) {
-                    window.setCurrentTool("ALTERNATING");
-                    window.currentTool = "ALTERNATING";
-
-                    // Update button states
-                    document.querySelectorAll(".tool-btn").forEach((b) =>
-                        b.classList.remove("active")
-                    );
-                    const alternatingBtn = document.getElementById(
-                        "AlternatingBtn",
-                    );
-                    if (alternatingBtn) {
-                        alternatingBtn.classList.add("active");
-                    }
-
-                    // Remove pen-active class from drawing layer
-                    const drawingLayerElement = document.getElementById(
-                        "drawingLayer",
-                    );
-                    if (drawingLayerElement) {
-                        drawingLayerElement.classList.remove("pen-active");
-                    }
-                }
                 // Send clear all command to viewer
                 if (window.networkManager && !window.isViewerMode) {
                     window.networkManager.send({

@@ -171,11 +171,11 @@ export class CommentatorSender {
                 break;
 
             case "clear-drawing":
-                if (window.drawingLayer) window.drawingLayer.clearCanvas();
+                if (window.drawingLayer) window.drawingLayer.clearCanvas(false);
                 break;
 
             case "clear-all":
-                if (window.drawingLayer) window.drawingLayer.clearCanvas();
+                if (window.drawingLayer) window.drawingLayer.clearCanvas(false);
                 if (window.overlay) window.overlay.clearStones();
                 break;
 

@@ -300,7 +300,7 @@ export class DrawingLayer {
         this.isDrawing = false;
     }
 
-    clearCanvas() {
+    clearCanvas(emitNetwork = true) {
         this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
         this.marks = [];
         this.paths = [];
@@ -322,7 +322,7 @@ export class DrawingLayer {
         this.context.beginPath(); // Reset the path state
 
         // Send to viewer if network manager is available
-        if (window.networkManager && !window.isViewerMode) {
+        if (emitNetwork && window.networkManager && !window.isViewerMode) {
             window.networkManager.send({
                 action: "clear-drawing",
             });
