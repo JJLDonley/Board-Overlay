@@ -319,6 +319,7 @@ export class DrawingLayer {
         this.context.lineWidth = 2 * this.getScalingFactor();
         this.context.lineCap = "round";
         this.context.lineJoin = "round";
+        this.context.beginPath(); // Reset the path state
 
         // Send to viewer if network manager is available
         if (window.networkManager && !window.isViewerMode) {
