@@ -103,8 +103,15 @@ export class DrawingLayer {
         this.context.moveTo(scaledX, scaledY);
         
         // Send start command immediately
-        if (window.commentatorSender && !window.isViewerMode) {
-            window.commentatorSender.sendDrawing('start', x, y, 'PEN');
+        if (window.networkManager && !window.isViewerMode) {
+            window.networkManager.send({
+                action: 'draw-start',
+                x: x,
+                y: y,
+                tool: 'PEN',
+                color: this.getPenColor(),
+                timestamp: Date.now()
+            });
         }
         
         // Start batching system for drawing points
@@ -132,8 +139,8 @@ export class DrawingLayer {
         }
         
         // Send batch of drawing points
-        if (window.commentatorSender && !window.isViewerMode) {
-            window.commentatorSender.sendCommand({
+        if (window.networkManager && !window.isViewerMode) {
+            window.networkManager.send({
                 action: 'draw-batch',
                 points: [...this.drawingBatch], // Copy the array
                 tool: 'PEN',
@@ -157,7 +164,7 @@ export class DrawingLayer {
             window.overlay.currentMouseY = y;
             
             // Also ensure the cursor tracking interval is running
-            if (!window.overlay.cursorSendInterval && window.commentatorSender && !window.isViewerMode) {
+            if (!window.overlay.cursorSendInterval && window.networkManager && !window.isViewerMode) {
                 // Track last sent coordinates to avoid duplicates
                 window.overlay.lastSentX = undefined;
                 window.overlay.lastSentY = undefined;
@@ -166,7 +173,7 @@ export class DrawingLayer {
                     if (window.overlay.currentMouseX !== undefined && window.overlay.currentMouseY !== undefined) {
                         // Only send if coordinates have changed
                         if (window.overlay.currentMouseX !== window.overlay.lastSentX || window.overlay.currentMouseY !== window.overlay.lastSentY) {
-                        window.commentatorSender.sendCommand({
+                        window.networkManager.send({
                             action: 'cursor-move',
                             x: window.overlay.currentMouseX,
                             y: window.overlay.currentMouseY,
@@ -244,8 +251,15 @@ export class DrawingLayer {
             }
             
             // Send end command
-            if (window.commentatorSender && !window.isViewerMode) {
-                window.commentatorSender.sendDrawing('end', 0, 0, 'PEN');
+            if (window.networkManager && !window.isViewerMode) {
+                window.networkManager.send({
+                    action: 'draw-end',
+                    x: 0,
+                    y: 0,
+                    tool: 'PEN',
+                    color: this.getPenColor(),
+                    timestamp: Date.now()
+                });
             }
         }
         this.isDrawing = false;
@@ -264,9 +278,11 @@ export class DrawingLayer {
         }
         this.drawingBatch = [];
         
-        // Send to viewer if commentator sender is available
-        if (window.commentatorSender && !window.isViewerMode) {
-            window.commentatorSender.sendClear();
+        // Send to viewer if network manager is available
+        if (window.networkManager && !window.isViewerMode) {
+            window.networkManager.send({
+                action: 'clear-drawing'
+            });
         }
     }
 
@@ -506,7 +522,7 @@ export class DrawingLayer {
     
     handleMouseEnter(e) {
         // Restart cursor tracking when mouse enters drawing layer
-        if (!window.overlay.cursorSendInterval && window.commentatorSender && !window.isViewerMode) {
+        if (!window.overlay.cursorSendInterval && window.networkManager && !window.isViewerMode) {
             // Reset last sent coordinates when re-entering
             window.overlay.lastSentX = undefined;
             window.overlay.lastSentY = undefined;
@@ -515,7 +531,7 @@ export class DrawingLayer {
                 if (window.overlay.currentMouseX !== undefined && window.overlay.currentMouseY !== undefined) {
                     // Only send if coordinates have changed
                     if (window.overlay.currentMouseX !== window.overlay.lastSentX || window.overlay.currentMouseY !== window.overlay.lastSentY) {
-                    window.commentatorSender.sendCommand({
+                    window.networkManager.send({
                         action: 'cursor-move',
                         x: window.overlay.currentMouseX,
                         y: window.overlay.currentMouseY,
@@ -571,4 +587,4 @@ export class DrawingLayer {
         }
         this.isDrawing = false;
     }
-} 
+}

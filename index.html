@@ -10,7 +10,6 @@
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
     >
-
   </head>
   <body>
     <div class="page-container">
@@ -27,7 +26,11 @@
           <button id="toggleSettings" class="icon-btn" title="Toggle Settings">
             <i class="fas fa-cog"></i>
           </button>
-          <button id="toggleObsControl" class="icon-btn" title="Toggle OBS Controls">
+          <button
+            id="toggleObsControl"
+            class="icon-btn"
+            title="Toggle OBS Controls"
+          >
             <i class="fas fa-video"></i>
           </button>
         </div>
@@ -90,7 +93,8 @@
               style="width: 32px; height: 32px; border: none; background: none; margin-left: 8px; vertical-align: middle"
             >
             <div class="shortcut-help">
-              <span>Shortcuts: S=Grid | R=Reset | Space=Clear All | Del=Clear Drawing | Q=Switch Color Order</span>
+              <span>Shortcuts: S=Grid | R=Reset | Space=Clear All | Del=Clear
+                Drawing | Q=Switch Color Order</span>
             </div>
           </div>
         </div>
@@ -99,9 +103,24 @@
         <div id="settingsPanel" class="tool-panel hidden">
           <div class="settings-group">
             <div class="setting-item">
-              <label for="VideoURL" title="VDO Ninja Camera for Canvas Dimensions"
-              >Camera Link:</label>
-              <input type="text" id="VideoURL" placeholder="VDO Ninja view link for canvas dimensions">
+              <label
+                for="VideoURL"
+                title="VDO Ninja Camera for Canvas Dimensions"
+              >Feed (Camera for board):</label>
+              <input
+                type="text"
+                id="VideoURL"
+                placeholder="VDO Ninja view link for canvas dimensions"
+              >
+            </div>
+            <div class="setting-item">
+              <label for="NetworkRoom" title="VDO Ninja Room Name for Network"
+              >Room (For network):</label>
+              <input
+                type="text"
+                id="NetworkRoom"
+                placeholder="Room name for networking"
+              >
             </div>
             <div class="setting-item">
               <label for="StoneSize" title="Adjust Stone Size"
@@ -110,11 +129,15 @@
             </div>
             <div class="setting-item">
               <label for="ChatUrl" title="Custom Chat URL">Chat URL:</label>
-              <input type="text" id="ChatUrl" placeholder="Paste chat embed URL here">
+              <input
+                type="text"
+                id="ChatUrl"
+                placeholder="Paste chat embed URL here"
+              >
             </div>
             <div class="setting-item">
               <label for="ObsVdoUrl" title="OBS VDO Ninja Link"
-              >OBS Camera:</label>
+              >OBS Controller:</label>
               <input
                 type="text"
                 id="ObsVdoUrl"
@@ -124,10 +147,10 @@
 
             <div class="setting-item">
               <button id="copyViewerUrl" title="Copy Viewer URL for Chroma Key">
-                Copy Viewer URL
+                View
               </button>
               <button id="copyShareUrl" title="Copy Shareable URL">
-                Copy Share URL
+                Comm
               </button>
             </div>
           </div>
@@ -137,14 +160,21 @@
         <div id="obsControlPanel" class="tool-panel hidden">
           <div class="obs-control-group">
             <div class="obs-status">
-              <span id="obsConnectionStatus" class="status-indicator disconnected">Disconnected</span>
+              <span
+                id="obsConnectionStatus"
+                class="status-indicator disconnected"
+              >Disconnected</span>
             </div>
             <div class="obs-scenes">
               <div class="scene-controls">
                 <div id="obsSceneButtons" class="scene-buttons">
                   <!-- Scene buttons will be dynamically added here -->
                 </div>
-                <div id="obsSceneDropdown" class="scene-dropdown" style="display: none;">
+                <div
+                  id="obsSceneDropdown"
+                  class="scene-dropdown"
+                  style="display: none"
+                >
                   <label for="obsSceneSelect">Scene:</label>
                   <select id="obsSceneSelect" disabled>
                     <option value="">No scenes available</option>
@@ -152,7 +182,9 @@
                 </div>
               </div>
               <div class="stream-controls">
-                <button id="obsStreamToggle" class="obs-btn" disabled>Start Stream</button>
+                <button id="obsStreamToggle" class="obs-btn" disabled>
+                  Start Stream
+                </button>
               </div>
             </div>
           </div>
@@ -166,8 +198,15 @@
           <canvas id="drawingLayer" class="largeCanvas"></canvas>
         </div>
         <div class="SidePanel">
-          <div class="OBS_Controls" style="align-items: center; justify-content: center;">
-            <iframe id="obs" class="smallIframe" allow="camera; microphone; display-capture; autoplay"></iframe>
+          <div
+            class="OBS_Controls"
+            style="align-items: center; justify-content: center"
+          >
+            <iframe
+              id="obs"
+              class="smallIframe"
+              allow="camera; microphone; display-capture; autoplay"
+            ></iframe>
           </div>
           <div class="Chat">
             <iframe id="chat" class="smallIframe" allow="autoplay"></iframe>

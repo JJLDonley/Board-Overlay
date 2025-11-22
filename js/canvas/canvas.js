@@ -89,9 +89,12 @@ export class Canvas {
                         drawingLayerElement.classList.remove('pen-active');
                     }
                     
-                    // Send to viewer if commentator sender is available
-                    if (window.commentatorSender && !window.isViewerMode) {
-                        window.commentatorSender.sendTool(toolType);
+                    // Send to viewer if network manager is available
+                    if (window.networkManager && !window.isViewerMode) {
+                        window.networkManager.send({
+                            action: 'set-tool',
+                            tool: toolType
+                        });
                     }
                 });
             }
@@ -102,9 +105,9 @@ export class Canvas {
         this.currentColor = this.currentColor === "BLACK" ? "WHITE" : "BLACK";
         debug.log('🎨 Switched current color to:', this.currentColor);
         
-        // Send to viewer if commentator sender is available
-        if (window.commentatorSender && !window.isViewerMode) {
-            window.commentatorSender.sendCommand({
+        // Send to viewer if network manager is available
+        if (window.networkManager && !window.isViewerMode) {
+            window.networkManager.send({
                 action: 'switch-color',
                 color: this.currentColor,
                 timestamp: Date.now()
@@ -204,9 +207,12 @@ export class Canvas {
                 }
                 this.updateGridButtonState();
                 
-                // Send to viewer if commentator sender is available
-                if (window.commentatorSender && !window.isViewerMode) {
-                    window.commentatorSender.sendGridToggle(this.show);
+                // Send to viewer if network manager is available
+                if (window.networkManager && !window.isViewerMode) {
+                    window.networkManager.send({
+                        action: 'toggle-grid',
+                        visible: this.show
+                    });
                 }
             });
         }
@@ -493,8 +499,11 @@ export class Canvas {
                 }
                 
                 // Send grid coordinates to viewers
-                if (window.commentatorSender && !window.isViewerMode) {
-                    window.commentatorSender.sendGridCoordinates(this.points);
+                if (window.networkManager && !window.isViewerMode) {
+                    window.networkManager.send({
+                        action: 'set-grid',
+                        points: this.points
+                    });
                     debug.log('📐 Sent grid coordinates to viewers:', this.points);
                 }
             }
@@ -550,9 +559,9 @@ export class Canvas {
                 }
                 window.drawingLayer.addMark(currentTool, point[0], point[1], text);
                 
-                // Send to viewer if commentator sender is available
-                if (window.commentatorSender && !window.isViewerMode) {
-                    window.commentatorSender.sendCommand({
+                // Send to viewer if network manager is available
+                if (window.networkManager && !window.isViewerMode) {
+                    window.networkManager.send({
                         action: 'add-mark',
                         type: currentTool,
                         x: point[0],
@@ -571,8 +580,13 @@ export class Canvas {
                 if (existingBoardStoneIndex >= 0) {
                     this.boardStones.splice(existingBoardStoneIndex, 1);
                     // Send board stone removal to viewer
-                    if (window.commentatorSender && !window.isViewerMode) {
-                        window.commentatorSender.sendStone(point[0], point[1], 'REMOVE_BOARD');
+                    if (window.networkManager && !window.isViewerMode) {
+                        window.networkManager.send({
+                            action: 'place-stone',
+                            x: point[0],
+                            y: point[1],
+                            color: 'REMOVE_BOARD'
+                        });
                     }
                 } else {
                     // Remove any variation stone at this position
@@ -585,12 +599,20 @@ export class Canvas {
                     this.boardStones.push([point[0], point[1], STONES.BOARD]);
                     
                     // Send board stone placement to viewer
-                    if (window.commentatorSender && !window.isViewerMode) {
-                        window.commentatorSender.sendStone(point[0], point[1], 'BOARD');
+                    if (window.networkManager && !window.isViewerMode) {
+                        window.networkManager.send({
+                            action: 'place-stone',
+                            x: point[0],
+                            y: point[1],
+                            color: 'BOARD'
+                        });
                         
                         // Also send current grid coordinates with board stone placement
                         if (this.points && this.points.length === 4) {
-                            window.commentatorSender.sendGridCoordinates(this.points);
+                            window.networkManager.send({
+                                action: 'set-grid',
+                                points: this.points
+                            });
                             debug.log('📐 Sent grid coordinates with board stone placement:', this.points);
                         }
                     }
@@ -604,8 +626,8 @@ export class Canvas {
                      this.stones.splice(existingStoneIndex, 1);
                      
                      // Send stone removal to viewer
-                     if (window.commentatorSender && !window.isViewerMode) {
-                         window.commentatorSender.sendCommand({
+                     if (window.networkManager && !window.isViewerMode) {
+                         window.networkManager.send({
                              action: 'remove-stone',
                              x: point[0],
                              y: point[1],
@@ -614,7 +636,10 @@ export class Canvas {
                          
                          // Also send current grid coordinates with stone removal
                          if (this.points && this.points.length === 4) {
-                             window.commentatorSender.sendGridCoordinates(this.points);
+                             window.networkManager.send({
+                                 action: 'set-grid',
+                                 points: this.points
+                             });
                              debug.log('📐 Sent grid coordinates with stone removal:', this.points);
                          }
                      }
@@ -641,13 +666,21 @@ export class Canvas {
                      
                      this.stones.push([point[0], point[1], STONES[stoneToPlace]]);
                      
-                     // Send to viewer if commentator sender is available
-                     if (window.commentatorSender && !window.isViewerMode) {
-                         window.commentatorSender.sendStone(point[0], point[1], stoneToPlace);
+                     // Send to viewer if network manager is available
+                     if (window.networkManager && !window.isViewerMode) {
+                         window.networkManager.send({
+                             action: 'place-stone',
+                             x: point[0],
+                             y: point[1],
+                             color: stoneToPlace
+                         });
                          
                          // Also send current grid coordinates with each stone placement
                          if (this.points && this.points.length === 4) {
-                             window.commentatorSender.sendGridCoordinates(this.points);
+                             window.networkManager.send({
+                                 action: 'set-grid',
+                                 points: this.points
+                             });
                              debug.log('📐 Sent grid coordinates with stone placement:', this.points);
                          }
                      }
@@ -677,7 +710,7 @@ export class Canvas {
         this.currentMouseY = cy;
         
         // Initialize cursor sending interval if not already running
-        if (!this.cursorSendInterval && window.commentatorSender && !window.isViewerMode) {
+        if (!this.cursorSendInterval && window.networkManager && !window.isViewerMode) {
             // Track last sent coordinates to avoid duplicates
             this.lastSentX = undefined;
             this.lastSentY = undefined;
@@ -686,7 +719,7 @@ export class Canvas {
                 if (this.currentMouseX !== undefined && this.currentMouseY !== undefined) {
                     // Only send if coordinates have changed
                     if (this.currentMouseX !== this.lastSentX || this.currentMouseY !== this.lastSentY) {
-                    window.commentatorSender.sendCommand({
+                    window.networkManager.send({
                         action: 'cursor-move',
                         x: this.currentMouseX,
                         y: this.currentMouseY,
@@ -712,7 +745,7 @@ export class Canvas {
     
     handleMouseEnter(event) {
         // Restart cursor tracking when mouse re-enters canvas
-        if (!this.cursorSendInterval && window.commentatorSender && !window.isViewerMode) {
+        if (!this.cursorSendInterval && window.networkManager && !window.isViewerMode) {
             // Reset last sent coordinates when re-entering
             this.lastSentX = undefined;
             this.lastSentY = undefined;
@@ -721,7 +754,7 @@ export class Canvas {
                 if (this.currentMouseX !== undefined && this.currentMouseY !== undefined) {
                     // Only send if coordinates have changed
                     if (this.currentMouseX !== this.lastSentX || this.currentMouseY !== this.lastSentY) {
-                    window.commentatorSender.sendCommand({
+                    window.networkManager.send({
                         action: 'cursor-move',
                         x: this.currentMouseX,
                         y: this.currentMouseY,
@@ -906,9 +939,11 @@ export class Canvas {
             window.updateShareableUrl();
         }
         
-        // Send to viewer if commentator sender is available
-        if (window.commentatorSender && !window.isViewerMode) {
-            window.commentatorSender.sendReset();
+        // Send to viewer if network manager is available
+        if (window.networkManager && !window.isViewerMode) {
+            window.networkManager.send({
+                action: 'reset-grid'
+            });
         }
     }
     

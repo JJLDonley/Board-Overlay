@@ -1,359 +1,372 @@
-import { debug } from '../utils/debugger.js';
-import { STONES } from '../constants.js';
+import { debug } from "../utils/debugger.js";
+import { STONES } from "../constants.js";
+import { VdoNinjaNetwork } from "../../network/network.js";
 
 export class CommentatorSender {
     constructor() {
+        this.network = null;
         this.enabled = false;
-        this.vdoFrame = null;
         this.roomName = null;
-        this.pingInterval = null;
-        this.lastPingTime = 0;
-        this.pingResponseTimes = [];
-        this.isConnected = false;
-        this.messageListener = null; // Store reference to listener for cleanup
-        debug.log('📡 CommentatorSender initialized');
-    }
-    
-    setupPingListener() {
-        // Remove existing listener if any
-        if (this.messageListener) {
-            window.removeEventListener('message', this.messageListener);
-        }
-        
-        // Create new listener
-        this.messageListener = (e) => {
-            // Debug all VDO messages
-            if (e.origin === 'https://vdo.ninja') {
-                debug.log('📡 Host received VDO message from:', e.source === this.vdoFrame?.contentWindow ? 'DATA_FRAME' : 'OTHER_FRAME', e.data);
-            }
-            
-            // Only process messages from our data channel iframe
-            if (!this.vdoFrame || e.source !== this.vdoFrame.contentWindow) {
-                return;
-            }
-            
-            if (e.data && "dataReceived" in e.data) {
-                debug.log('📡 Host received data:', e.data.dataReceived);
-                try {
-                    const message = JSON.parse(e.data.dataReceived);
-                    debug.log('📡 Host parsed message:', message);
-                    if (message.action === 'ping-response') {
-                        this.handlePingResponse(message);
-                    } else if (message.action === 'viewer-ping') {
-                        this.handleViewerPing(message);
-                    } else if (message.action === 'request-grid') {
-                        debug.log('📐 Host received grid request from viewer (deprecated - grid sent with stones now)');
-                    } else {
-                        debug.log('📡 Host received unknown action:', message.action);
-                    }
-                } catch (error) {
-                    debug.log('📡 Host received non-JSON data:', e.data.dataReceived);
-                }
-            } else {
-                // Log all messages to see what's coming through
-                debug.log('📡 Host received non-data message:', e.data);
-            }
-        };
-        
-        // Add the listener
-        window.addEventListener('message', this.messageListener);
-        debug.log('📡 Host message listener setup complete');
-    }
-    
-    handleViewerPing(message) {
-        const responseTime = Date.now() - message.timestamp;
-        debug.log(`🏓 Viewer ping received: ${responseTime}ms delay`);
-        
-        // Send response back to viewer
-        this.sendCommand({
-            action: 'viewer-ping-response',
-            originalTimestamp: message.timestamp,
-            responseTimestamp: Date.now()
-        });
-    }
-    
-    handlePingResponse(message) {
-        const responseTime = Date.now() - message.originalTimestamp;
-        this.pingResponseTimes.push(responseTime);
-        
-        // Keep only last 10 ping times
-        if (this.pingResponseTimes.length > 10) {
-            this.pingResponseTimes.shift();
-        }
-        
-        const avgResponseTime = this.pingResponseTimes.reduce((a, b) => a + b, 0) / this.pingResponseTimes.length;
-        debug.log(`🏓 Ping response from viewer: ${responseTime}ms (avg: ${Math.round(avgResponseTime)}ms)`);
-    }
-    
-    handleGridRequest(message) {
-        debug.log('📐 Viewer requested current grid info');
-        
-        // Get current grid from overlay
-        const currentGrid = window.overlay && window.overlay.points && window.overlay.points.length === 4 
-            ? window.overlay.points 
-            : null;
-        
-        // Send current grid info back to viewer
-        this.sendCommand({
-            action: 'grid-info',
-            points: currentGrid,
-            isGridSet: !!(currentGrid),
-            timestamp: Date.now()
-        });
-        
-        debug.log('📐 Sent current grid info to viewer:', currentGrid);
-    }
-    
-    startHostPing() {
-        if (this.pingInterval) {
-            clearInterval(this.pingInterval);
-        }
-        
-        this.pingInterval = setInterval(() => {
-            this.sendHostPing();
-        }, 30000); // Send ping every 30 seconds (half a minute)
-        
-        debug.log('🏓 Started host ping system');
-    }
-    
-    stopHostPing() {
-        if (this.pingInterval) {
-            clearInterval(this.pingInterval);
-            this.pingInterval = null;
-        }
-        debug.log('🏓 Stopped host ping system');
-    }
-    
-    sendHostPing() {
-        const timestamp = Date.now();
-        this.lastPingTime = timestamp;
-        
-        this.sendCommand({
-            action: 'host-ping',
-            timestamp: timestamp
-        });
-    }
-    
-        // Seeded random number generator (LCG - Linear Congruential Generator)
-    seededRandom(seed) {
-        const a = 1664525;
-        const c = 1013904223;
-        const m = Math.pow(2, 32);
-        return () => {
-            seed = (a * seed + c) % m;
-            return seed / m;
-        };
+
+        // Map to store cursor data for each user
+        // Key: senderId, Value: { element, label, currentX, currentY, targetX, targetY, visible, timeout }
+        this.cursors = new Map();
+        this.lerpSpeed = 0.3;
+
+        this.uuid = this.generateUUID();
+        debug.log(
+            "📡 CommentatorSender (CO) initialized with UUID:",
+            this.uuid,
+        );
+
+        this.startCursorAnimation();
     }
 
-    // Create a hash from string for seeding
-    stringToSeed(str) {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            const char = str.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // Convert to 32-bit integer
-        }
-        return Math.abs(hash);
+    generateUUID() {
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+            /[xy]/g,
+            function (c) {
+                var r = Math.random() * 16 | 0,
+                    v = c == "x" ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            },
+        );
     }
 
-    // Generate UUID-like string with seed for consistent output
-    generateSeededUUID(seed) {
-        const rng = this.seededRandom(seed);
-        
-        // Generate 32 hex characters in UUID format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
-        const hex = () => Math.floor(rng() * 16).toString(16);
-        const uuid = [
-            // 8 hex chars
-            hex() + hex() + hex() + hex() + hex() + hex() + hex() + hex(),
-            // 4 hex chars
-            hex() + hex() + hex() + hex(),
-            // 4 hex chars with version 4
-            '4' + hex() + hex() + hex(),
-            // 4 hex chars with variant bits
-            (8 + Math.floor(rng() * 4)).toString(16) + hex() + hex() + hex(),
-            // 12 hex chars
-            hex() + hex() + hex() + hex() + hex() + hex() + hex() + hex() + hex() + hex() + hex() + hex()
-        ].join('-');
-        
-        return uuid;
-    }
-
-    // Create data channel room name using seeded UUID
-    createDataChannelRoomName(roomName) {
-        // Create seed from room name + date for daily uniqueness
-        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-        const seedString = `${roomName}-${today}`;
-        const seed = this.stringToSeed(seedString);
-        
-        // Generate consistent UUID-like identifier
-        const uuid = this.generateSeededUUID(seed);
-        const dataRoomName = `Baduk-${uuid}`;
-        
-        debug.log('📡 Created data channel room name:', dataRoomName, 'from OBS room:', roomName, 'seed:', seed);
-        return dataRoomName;
-    }
-    
     enable(roomName) {
         if (!roomName) {
-            debug.error('❌ No room name provided for commentator sender');
+            debug.error("❌ No room name provided for commentator sender");
             return;
         }
-        
+
         this.roomName = roomName;
         this.enabled = true;
-        
-        // Create unique data channel room name
-        const dataRoomName = this.createDataChannelRoomName(roomName);
-        
-        // Create invisible data channel iframe for host-viewer communication
-        const dataIframe = document.createElement("iframe");
-        dataIframe.src = `https://vdo.ninja/?push=${dataRoomName}&vd=0&ad=0&autostart&cleanoutput`;
-        dataIframe.style.width = "0px";
-        dataIframe.style.height = "0px";
-        dataIframe.style.position = "fixed";
-        dataIframe.style.left = "-100px";
-        dataIframe.style.top = "-100px";
-        dataIframe.id = "hostDataChannelFrame";
-        document.body.appendChild(dataIframe);
-        this.vdoFrame = dataIframe;
-        
-        debug.log('📡 CommentatorSender enabled with dedicated data channel iframe');
-        debug.log('📡 Data channel room:', dataRoomName);
-        debug.log('📡 Data iframe src:', this.vdoFrame.src);
-        
-        // Connection status check - give time for VDO.ninja to establish data channel
-        setTimeout(() => {
-            this.isConnected = true;
-            this.startHostPing();
-            debug.log('📡 Host ping system started after connection delay');
-            
-            // Start continuous state emission
-            this.startContinuousEmission();
-            debug.log('📡 Continuous state emission started');
-        }, 1000); // Reduced from 3000ms to 1000ms for faster reconnection
-        
-        this.setupPingListener();
+
+        // Initialize network with the room name
+        this.network = new VdoNinjaNetwork(this.roomName);
+
+        // Connect with CO label
+        const label = `CO_${this.uuid}`;
+        this.network.connect(label);
+
+        // Listen for peer joins to sync state
+        this.network.on("peer-joined", (peerId) => {
+            debug.log("👤 Peer joined:", peerId);
+            this.sendCurrentState();
+        });
+
+        // Listen for commands from other commentators
+        this.network.on("command", (data) => {
+            this.handleCommand(data);
+        });
+
+        this.network.on("connected", () => {
+            debug.log("✅ Network connected");
+        });
+
+        debug.log("📡 CommentatorSender enabled for room:", roomName);
     }
-    
+
     disable() {
         this.enabled = false;
-        this.stopHostPing();
-        this.stopContinuousEmission();
-        this.isConnected = false;
-        
-        // Clean up message listener
-        if (this.messageListener) {
-            window.removeEventListener('message', this.messageListener);
-            this.messageListener = null;
+        if (this.network) {
+            this.network.disconnect();
+            this.network = null;
         }
-        
-        if (this.vdoFrame && this.vdoFrame.id === 'hostDataChannelFrame') {
-            this.vdoFrame.remove();
-        }
-        this.vdoFrame = null;
-        debug.log('📡 CommentatorSender disabled');
+        debug.log("📡 CommentatorSender disabled");
     }
-    
-    sendCommand(command) {
-        if (!this.enabled || !this.vdoFrame || !this.isConnected) {
-            debug.log('📡 Not sending - sender not enabled, no frame, or not connected');
+
+    handleCommand(data) {
+        const { sender, payload } = data;
+
+        // Ignore commands from self
+        if (this.network && this.network.label === sender) {
             return;
         }
-        
-        try {
-            const message = {
-                "sendData": JSON.stringify(command),
-                "type": "pcs"
-            };
-            
-            debug.log('📡 Sending via data channel:', message);
-            
-            this.vdoFrame.contentWindow.postMessage(message, '*');
-            
-            debug.log('📡 Sent command:', command);
-        } catch (error) {
-            debug.error('❌ Failed to send command:', error);
+
+        // Accept all commands from other commentators (same as viewer)
+        // Commentators receive everything viewers receive, but also send their own actions
+        if (payload && payload.role === "CO") {
+            // debug.log('📥 Commentator received CO command from:', sender, payload);
+            this.processCommand(payload, sender);
         }
     }
-    
+
+    processCommand(command, sender) {
+        switch (command.action) {
+            case "set-grid":
+                if (window.overlay) {
+                    window.overlay.points = command.points;
+                    window.overlay.grid = window.overlay.generateGrid(
+                        command.points,
+                    );
+                    window.overlay.isGridSet = true;
+                    window.overlay.updateGridButtonState();
+                }
+                break;
+
+            case "place-stone":
+                if (window.overlay) {
+                    if (
+                        command.color === "BOARD" ||
+                        command.color === "REMOVE_BOARD"
+                    ) {
+                        window.overlay.placeBoardStone(
+                            command.x,
+                            command.y,
+                            command.color,
+                        );
+                    } else {
+                        window.overlay.placeStone(
+                            command.x,
+                            command.y,
+                            command.color,
+                        );
+                    }
+                }
+                break;
+
+            case "draw-tool":
+                if (window.drawingLayer) {
+                    switch (command.drawAction) {
+                        case "start":
+                            window.drawingLayer.startDrawingAt(
+                                command.x,
+                                command.y,
+                                command.tool,
+                            );
+                            break;
+                        case "draw":
+                            window.drawingLayer.drawTo(command.x, command.y);
+                            break;
+                        case "end":
+                            window.drawingLayer.endDrawing();
+                            break;
+                    }
+                }
+                break;
+
+            case "draw-batch":
+                if (
+                    window.drawingLayer && command.points &&
+                    command.points.length > 0
+                ) {
+                    // Use the same smooth rendering as the viewer
+                    this.drawSmoothBatch(command.points, command.color);
+                    debug.log(
+                        `🎨 Processed drawing batch with ${command.points.length} points`,
+                    );
+                }
+                break;
+
+            case "add-mark":
+                if (window.drawingLayer) {
+                    window.drawingLayer.addMark(
+                        command.type,
+                        command.x,
+                        command.y,
+                        command.text,
+                    );
+                }
+                break;
+
+            case "clear-drawing":
+                if (window.drawingLayer) window.drawingLayer.clearCanvas();
+                break;
+
+            case "clear-all":
+                if (window.drawingLayer) window.drawingLayer.clearCanvas();
+                if (window.overlay) window.overlay.clearStones();
+                break;
+
+            case "reset-board":
+                if (window.overlay) window.overlay.resetGrid();
+                break;
+
+            case "toggle-grid":
+                if (window.overlay) {
+                    window.overlay.show = command.visible;
+                    window.overlay.updateGridButtonState();
+                }
+                break;
+
+            case "set-tool":
+                if (window.setCurrentTool) window.setCurrentTool(command.tool);
+                document.querySelectorAll(".tool-btn").forEach((btn) =>
+                    btn.classList.remove("active")
+                );
+                const toolButtons = {
+                    "BLACK": "BlackStoneBtn",
+                    "WHITE": "WhiteStoneBtn",
+                    "ALTERNATING": "AlternatingBtn",
+                    "PEN": "PenBtn",
+                    "TRIANGLE": "TriangleBtn",
+                    "CIRCLE": "CircleBtn",
+                    "SQUARE": "SquareBtn",
+                    "LETTER": "LetterBtn",
+                };
+                const btnId = toolButtons[command.tool];
+                if (btnId) {
+                    const btn = document.getElementById(btnId);
+                    if (btn) btn.classList.add("active");
+                }
+                break;
+
+            case "cursor-move":
+                this.updateCursor(sender, command.x, command.y);
+                break;
+        }
+    }
+
+    drawSmoothBatch(points, color) {
+        if (
+            !window.drawingLayer || !window.drawingLayer.context ||
+            points.length === 0
+        ) return;
+
+        const context = window.drawingLayer.context;
+        const originalColor = context.strokeStyle;
+        const originalLineWidth = context.lineWidth;
+
+        // Set drawing properties
+        if (color) {
+            context.strokeStyle = color;
+        }
+        context.lineWidth = 2;
+        context.lineCap = "round";
+        context.lineJoin = "round";
+
+        // If we only have one point, draw a small dot
+        if (points.length === 1) {
+            context.beginPath();
+            context.arc(points[0][0], points[0][1], 1, 0, 2 * Math.PI);
+            context.fill();
+            return;
+        }
+
+        // Use quadratic curves for smooth interpolation between points
+        context.beginPath();
+        context.moveTo(points[0][0], points[0][1]);
+
+        // For smoother curves, we'll use every point as a control point
+        for (let i = 1; i < points.length; i++) {
+            const currentPoint = points[i];
+
+            if (i === points.length - 1) {
+                // Last point - draw straight line
+                context.lineTo(currentPoint[0], currentPoint[1]);
+            } else {
+                // Use next point to create smooth curve
+                const nextPoint = points[i + 1];
+                const controlX = (currentPoint[0] + nextPoint[0]) / 2;
+                const controlY = (currentPoint[1] + nextPoint[1]) / 2;
+
+                context.quadraticCurveTo(
+                    currentPoint[0],
+                    currentPoint[1],
+                    controlX,
+                    controlY,
+                );
+            }
+        }
+
+        context.stroke();
+
+        // Restore original properties
+        context.strokeStyle = originalColor;
+        context.lineWidth = originalLineWidth;
+    }
+
+    sendCommand(command) {
+        if (!this.enabled || !this.network) {
+            return;
+        }
+
+        // Add timestamp if not present
+        if (!command.timestamp) {
+            command.timestamp = Date.now();
+        }
+
+        // Add role for identification
+        command.role = "CO";
+
+        // Send to all peers
+        this.network.send("command", command);
+
+        // debug.log('📡 Sent command:', command);
+    }
+
     // Convenience methods for different actions
     sendStone(x, y, color) {
         this.sendCommand({
-            action: 'place-stone',
+            action: "place-stone",
             x: x,
             y: y,
             color: color,
-            timestamp: Date.now()
         });
     }
-    
+
     sendDrawing(drawAction, x, y, tool) {
         this.sendCommand({
-            action: 'draw-tool',
+            action: "draw-tool",
             drawAction: drawAction,
             x: x,
             y: y,
             tool: tool,
-            timestamp: Date.now()
         });
     }
-    
+
     sendGridToggle(visible) {
         this.sendCommand({
-            action: 'toggle-grid',
+            action: "toggle-grid",
             visible: visible,
-            timestamp: Date.now()
         });
     }
-    
+
     sendReset() {
         this.sendCommand({
-            action: 'reset-board',
-            timestamp: Date.now()
+            action: "reset-board",
         });
     }
-    
+
     sendClear() {
         this.sendCommand({
-            action: 'clear-drawing',
-            timestamp: Date.now()
+            action: "clear-drawing",
         });
     }
-    
+
     sendClearAll() {
         this.sendCommand({
-            action: 'clear-all',
-            timestamp: Date.now()
+            action: "clear-all",
         });
     }
-    
+
     sendClearDrawing() {
         this.sendCommand({
-            action: 'clear-drawing',
-            timestamp: Date.now()
+            action: "clear-drawing",
         });
     }
-    
+
     sendTool(tool) {
         this.sendCommand({
-            action: 'set-tool',
+            action: "set-tool",
             tool: tool,
-            timestamp: Date.now()
         });
     }
-    
+
     sendGridCoordinates(points) {
         this.sendCommand({
-            action: 'set-grid',
+            action: "set-grid",
             points: points,
-            timestamp: Date.now()
         });
-        debug.log('📐 Sent grid coordinates to viewers:', points);
+        debug.log("📐 Sent grid coordinates to viewers:", points);
     }
 
     // Send complete current state to viewers
     sendCurrentState() {
         if (!this.enabled || !window.overlay) return;
+
+        debug.log("🔄 Sending full state snapshot...");
 
         // Send grid coordinates if available
         if (window.overlay.points && window.overlay.points.length === 4) {
@@ -362,76 +375,199 @@ export class CommentatorSender {
 
         // Send all stones
         if (window.overlay.stones && window.overlay.stones.length > 0) {
-            window.overlay.stones.forEach(stone => {
+            window.overlay.stones.forEach((stone) => {
                 const [x, y, color] = stone;
                 // Compare with actual STONES constants (imported from constants.js)
-                const colorName = color === STONES.BLACK ? 'BLACK' : 
-                                color === STONES.WHITE ? 'WHITE' : 'BOARD';
+                const colorName = color === STONES.BLACK
+                    ? "BLACK"
+                    : color === STONES.WHITE
+                    ? "WHITE"
+                    : "BOARD";
                 this.sendStone(x, y, colorName);
             });
         }
 
         // Send all board stones
-        if (window.overlay.boardStones && window.overlay.boardStones.length > 0) {
-            window.overlay.boardStones.forEach(stone => {
+        if (
+            window.overlay.boardStones && window.overlay.boardStones.length > 0
+        ) {
+            window.overlay.boardStones.forEach((stone) => {
                 const [x, y] = stone;
-                this.sendStone(x, y, 'BOARD');
+                this.sendStone(x, y, "BOARD");
             });
         }
 
         // Send all drawing paths
-        if (window.drawingLayer && window.drawingLayer.paths && window.drawingLayer.paths.length > 0) {
-            window.drawingLayer.paths.forEach(path => {
+        if (
+            window.drawingLayer && window.drawingLayer.paths &&
+            window.drawingLayer.paths.length > 0
+        ) {
+            window.drawingLayer.paths.forEach((path) => {
                 if (path.points && path.points.length > 0) {
                     this.sendCommand({
-                        action: 'draw-batch',
+                        action: "draw-batch",
                         points: path.points,
                         color: path.color,
-                        timestamp: Date.now()
                     });
                 }
             });
         }
 
         // Send all marks
-        if (window.drawingLayer && window.drawingLayer.marks && window.drawingLayer.marks.length > 0) {
-            window.drawingLayer.marks.forEach(mark => {
+        if (
+            window.drawingLayer && window.drawingLayer.marks &&
+            window.drawingLayer.marks.length > 0
+        ) {
+            window.drawingLayer.marks.forEach((mark) => {
                 this.sendCommand({
-                    action: 'add-mark',
+                    action: "add-mark",
                     type: mark.type,
                     x: mark.x,
                     y: mark.y,
-                    text: mark.text || '',
-                    timestamp: Date.now()
+                    text: mark.text || "",
                 });
             });
         }
 
-        debug.log('📡 Sent complete current state to viewers');
+        debug.log("📡 Sent complete current state to viewers");
     }
 
-    // Start continuous state emission
-    startContinuousEmission() {
-        if (this.continuousEmissionInterval) {
-            clearInterval(this.continuousEmissionInterval);
+    createCursorElement(senderId) {
+        // Create cursor container
+        const container = document.createElement("div");
+        container.id = `cursor-${senderId}`;
+        container.style.cssText = `
+            position: absolute;
+            pointer-events: none;
+            z-index: 999999 !important;
+            display: none;
+            transition: opacity 0.2s;
+        `;
+
+        // Create SVG cursor (white arrow with black border)
+        // Generate a unique color for this sender
+        const hue = this.getHash(senderId) % 360;
+        const color = `hsl(${hue}, 70%, 50%)`;
+
+        const cursorSvg = document.createElement("div");
+        cursorSvg.innerHTML = `
+            <svg width="24" height="24" viewBox="0 0 24 24" style="filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.5)); transform: rotate(-15deg);">
+                <path d="M0,0 L0,16 L5,11 L9,19 L11,18 L7,10 L12,10 Z" 
+                      fill="${color}" 
+                      stroke="white" 
+                      stroke-width="1.5"/>
+            </svg>
+        `;
+
+        // Create label
+        const label = document.createElement("div");
+        // Extract a short ID or use CO_X if possible
+        const shortId = senderId.substring(0, 4);
+        label.textContent = `CO_${shortId}`;
+        label.style.cssText = `
+            background-color: ${color};
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 12px;
+            margin-top: -4px;
+            white-space: nowrap;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        `;
+
+        container.appendChild(cursorSvg);
+        container.appendChild(label);
+        document.body.appendChild(container);
+
+        return container;
+    }
+
+    getHash(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return Math.abs(hash);
+    }
+
+    updateCursor(senderId, x, y) {
+        if (!senderId) return;
+
+        // In Commentator mode, we don't scale coordinates (1:1 with other commentators)
+        // Unless we are on a different resolution, but for now assume all commentators use 1280x720 base
+
+        let cursor = this.cursors.get(senderId);
+
+        if (!cursor) {
+            const element = this.createCursorElement(senderId);
+            cursor = {
+                element: element,
+                currentX: x,
+                currentY: y,
+                targetX: x,
+                targetY: y,
+                visible: true,
+                timeout: null,
+            };
+            this.cursors.set(senderId, cursor);
+            debug.log(`👤 New cursor created for ${senderId}`);
         }
 
-        // Emit state every 5 seconds to ensure viewers stay in sync
-        this.continuousEmissionInterval = setInterval(() => {
-            if (this.enabled) {
-                this.sendCurrentState();
-            }
-        }, 5000);
+        // Update target position
+        cursor.targetX = x;
+        cursor.targetY = y;
+        cursor.visible = true;
+        cursor.element.style.display = "block";
+        cursor.element.style.opacity = "1";
 
-        debug.log('📡 Started continuous state emission (every 5 seconds)');
+        // Reset timeout
+        if (cursor.timeout) clearTimeout(cursor.timeout);
+        cursor.timeout = setTimeout(() => {
+            cursor.visible = false;
+            cursor.element.style.opacity = "0";
+        }, 3000);
     }
 
-    // Stop continuous state emission
-    stopContinuousEmission() {
-        if (this.continuousEmissionInterval) {
-            clearInterval(this.continuousEmissionInterval);
-            this.continuousEmissionInterval = null;
-            debug.log('📡 Stopped continuous state emission');
+    startCursorAnimation() {
+        const animateCursors = () => {
+            this.cursors.forEach((cursor) => {
+                if (
+                    !cursor.visible &&
+                    Math.abs(cursor.element.style.opacity) < 0.01
+                ) return;
+
+                // Lerp
+                cursor.currentX += (cursor.targetX - cursor.currentX) *
+                    this.lerpSpeed;
+                cursor.currentY += (cursor.targetY - cursor.currentY) *
+                    this.lerpSpeed;
+
+                this.updateCursorPosition(cursor);
+            });
+
+            requestAnimationFrame(animateCursors);
+        };
+
+        requestAnimationFrame(animateCursors);
+    }
+
+    updateCursorPosition(cursor) {
+        const canvas = document.getElementById("overlay");
+        if (canvas && cursor.element) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = rect.width / canvas.width;
+            const scaleY = rect.height / canvas.height;
+
+            // Convert canvas coordinates to page coordinates
+            const pageX = rect.left + window.scrollX +
+                (cursor.currentX * scaleX);
+            const pageY = rect.top + window.scrollY +
+                (cursor.currentY * scaleY);
+
+            cursor.element.style.left = pageX + "px";
+            cursor.element.style.top = pageY + "px";
         }
     }
-} 
+}

@@ -7,8 +7,7 @@ import { UIManager } from './managers/ui-manager.js';
 import { Video } from './media/video.js';
 import { ConfigManager } from './managers/config-manager.js';
 import { OBSController } from './obs/obs-controller.js';
-import { ViewerController } from './viewer/viewer-controller.js';
-import { CommentatorSender } from './viewer/commentator-sender.js';
+import { NetworkManager } from './managers/network-manager.js';
 
 // Global variables
 let isEventSet = false;
@@ -41,11 +40,25 @@ function updateShareableUrl() {
         params.set('obs', encodeURIComponent(encodeURIComponent(obsLink)));
     }
     
+    // Add network room param
+    const networkRoom = document.getElementById('NetworkRoom')?.value;
+    if (networkRoom) {
+        params.set('room', encodeURIComponent(networkRoom));
+    }
+
     // Add coordinate color param
     const coordColor = document.getElementById('coordinateColor')?.value;
     if (coordColor) {
         params.set('coord_color', coordColor);
     }
+    
+    // Add role if viewer mode
+    if (window.isViewerMode) {
+        params.set('role', 'VW');
+    } else {
+        params.set('role', 'CO');
+    }
+
     // Note: OBS control is now handled through VDO Ninja iframe postMessage system
     let url = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', url);
@@ -91,7 +104,15 @@ function loadConfigFromUrl() {
         const videoUrlInput = document.getElementById('VideoURL');
         const feedElement = document.getElementById('feed');
         if (videoUrlInput) videoUrlInput.value = decodedVdoLink;
-        if (feedElement) feedElement.src = decodedVdoLink;
+        if (feedElement) {
+             // Use iframe manager to ensure proper audio settings
+             if (window.iframeManager && window.iframeManager.ensureFeedAudioSettings) {
+                const processedUrl = window.iframeManager.ensureFeedAudioSettings(decodedVdoLink);
+                feedElement.src = processedUrl;
+            } else {
+                feedElement.src = decodedVdoLink;
+            }
+        }
     }
 
     // OBS VDO Ninja link (double decode)
@@ -108,6 +129,14 @@ function loadConfigFromUrl() {
         const obsElement = document.getElementById('obs');
         if (obsVdoUrlInput) obsVdoUrlInput.value = decodedObsLink;
         if (obsElement) obsElement.src = decodedObsLink;
+    }
+
+    // Network Room
+    const roomName = params.get('room');
+    if (roomName) {
+        const decodedRoom = decodeURIComponent(roomName);
+        const networkRoomInput = document.getElementById('NetworkRoom');
+        if (networkRoomInput) networkRoomInput.value = decodedRoom;
     }
 
     // Chat URL
@@ -263,28 +292,21 @@ function generateViewerUrl() {
     const viewerUrl = new URL(baseUrl);
     viewerUrl.searchParams.set('viewer', 'yes');
     
-    // Get the OBS URL from input field and create clean viewer URL
-    const obsUrlInput = document.getElementById('ObsVdoUrl');
-    if (obsUrlInput && obsUrlInput.value.trim()) {
-        let obsLink = obsUrlInput.value.trim();
-        
-        // Extract room name from OBS URL
-        const obsParams = new URLSearchParams(obsLink.split('?')[1] || '');
-        const roomName = obsParams.get('push') || obsParams.get('view');
-        
-        if (roomName) {
-            // Create clean viewer URL with ONLY view=roomname&dataonly
-            const cleanViewerUrl = `https://vdo.ninja/?view=${roomName}&dataonly`;
-            viewerUrl.searchParams.set('obs', encodeURIComponent(encodeURIComponent(cleanViewerUrl)));
-        }
+    // Add network room
+    const networkRoom = document.getElementById('NetworkRoom')?.value;
+    if (networkRoom) {
+        viewerUrl.searchParams.set('room', encodeURIComponent(networkRoom));
     }
-    
+
     // Add coordinate color to viewer URL
     const coordColorInput = document.getElementById('coordinateColor');
     if (coordColorInput && coordColorInput.value) {
         viewerUrl.searchParams.set('coord_color', coordColorInput.value);
     }
     
+    // Add role=VW
+    viewerUrl.searchParams.set('role', 'VW');
+
     debug.log('Generated viewer URL:', viewerUrl.toString());
     return viewerUrl.toString();
 }
@@ -316,10 +338,21 @@ function main() {
             isEventSet = true;
         }
 
-        // 2. Now load config from URL (overlay is defined)
+        // 2. Initialize Managers
+        const iframeManager = new IframeManager();
+        const uiManager = new UIManager(iframeManager);
+        const obsController = new OBSController();
+        const networkManager = new NetworkManager();
+        
+        // Make managers globally accessible
+        window.iframeManager = iframeManager;
+        window.obsController = obsController;
+        window.networkManager = networkManager;
+
+        // 3. Now load config from URL (overlay is defined)
         loadConfigFromUrl();
         
-        // 2.5. Update canvas dimensions after viewer mode is determined
+        // 3.5. Update canvas dimensions after viewer mode is determined
         if (overlay && overlay.updateCanvasDimensions) {
             overlay.updateCanvasDimensions();
         }
@@ -327,7 +360,7 @@ function main() {
             drawingLayer.updateCanvasDimensions();
         }
 
-        // 3. If grid auto-hide was pending, do it now
+        // 4. If grid auto-hide was pending, do it now
         if (window._pendingGridAutoHide && !window.isViewerMode) {
             overlay.show = true;
             overlay.updateGridButtonState();
@@ -338,90 +371,71 @@ function main() {
             window._pendingGridAutoHide = false;
         }
 
-        // 4. Set up controllers based on mode
-        if (window.isViewerMode) {
-            // Enable debugging in viewer mode
-            if (window.debugger) {
-                window.debugger.enabled = true;
-            }
+        // 5. Set up Network based on mode
+        const params = new URLSearchParams(window.location.search);
+        let roomName = params.get('room');
+        if (roomName) {
+            roomName = decodeURIComponent(roomName);
             
-            // Viewer mode - setup viewer controller (it handles its own message listening)
-            const viewerController = new ViewerController();
-            window.viewerController = viewerController;
-            
-            debug.log('🎥 Viewer mode initialized');
-        } else {
-            // Normal mode - set up UIManager, IframeManager, etc.
-            const iframeManager = new IframeManager();
-            const uiManager = new UIManager(iframeManager);
-            const obsController = new OBSController();
-            const commentatorSender = new CommentatorSender();
-            
-            // Make controllers globally accessible
-            window.obsController = obsController;
-            window.commentatorSender = commentatorSender;
-            window.iframeManager = iframeManager;
-            
-            // Now that commentator sender is available, process OBS URL if it was loaded from parameters
-            const params = new URLSearchParams(window.location.search);
-            let obsUrl = params.get('obs');
-            if (obsUrl) {
-                obsUrl = decodeURIComponent(obsUrl);
-                if (obsUrl.includes('%')) {
-                    obsUrl = decodeURIComponent(obsUrl);
+            if (window.isViewerMode) {
+                // Enable debugging in viewer mode
+                if (window.debugger) {
+                    window.debugger.enabled = true;
                 }
-                
-                // Extract room name from OBS URL (look for view= or push= parameter)
-                const obsParams = new URLSearchParams(obsUrl.split('?')[1] || '');
-                const roomName = obsParams.get('view') || obsParams.get('push');
-                
-                if (roomName) {
-                    commentatorSender.enable(roomName);
-                    debug.log('📡 Data channel communication enabled for OBS room:', roomName);
-                } else {
-                    debug.error('❌ Could not extract room name from OBS Camera URL');
-                }
+                debug.log('🎥 Initializing NetworkManager in Viewer Mode');
+                networkManager.initialize('VW', roomName);
             } else {
-                debug.error('❌ No OBS Camera URL found - cannot establish data channel communication');
+                debug.log('📡 Initializing NetworkManager in Commentator Mode');
+                networkManager.initialize('CO', roomName);
             }
-            
+        } else {
+            if (window.isViewerMode) {
+                debug.error('❌ No Network Room provided for Viewer Mode');
+            } else {
+                debug.log('ℹ️ No Network Room provided - NetworkManager waiting for input');
+            }
+        }
+
+        // 6. Additional Host-only setup
+        if (!window.isViewerMode) {
             // Generate initial viewer URL
             window.currentViewerUrl = generateViewerUrl();
             
-            // Set up copy viewer URL button
+            // Set up copy viewer URL button (View)
             const copyViewerUrlBtn = document.getElementById('copyViewerUrl');
-            debug.log('🔍 Found copy viewer URL button:', !!copyViewerUrlBtn);
-            debug.log('🔍 Current viewer URL:', window.currentViewerUrl);
-            
             if (copyViewerUrlBtn) {
                 copyViewerUrlBtn.addEventListener('click', () => {
-                    debug.log('🖱️ Copy viewer URL button clicked');
-                    debug.log('🔗 Viewer URL to copy:', window.currentViewerUrl);
-                    
                     if (window.currentViewerUrl) {
                         navigator.clipboard.writeText(window.currentViewerUrl).then(() => {
-                            debug.log('📋 Viewer URL copied to clipboard:', window.currentViewerUrl);
+                            const originalText = copyViewerUrlBtn.textContent;
                             copyViewerUrlBtn.textContent = 'Copied!';
                             setTimeout(() => {
-                                copyViewerUrlBtn.textContent = 'Copy Viewer URL';
+                                copyViewerUrlBtn.textContent = originalText;
                             }, 2000);
                         }).catch(err => {
-                            debug.error('❌ Failed to copy to clipboard:', err);
-                            // Fallback - show the URL in an alert
                             alert('Viewer URL: ' + window.currentViewerUrl);
                         });
                     } else {
-                        debug.error('❌ No viewer URL available to copy');
                         alert('No viewer URL generated yet');
                     }
                 });
-            } else {
-                debug.error('❌ Copy viewer URL button not found');
             }
-        }
-        
-        // Request initial status after a short delay (only in commentator mode)
-        if (!window.isViewerMode) {
+            
+            // Set up copy share URL button (Comm)
+            const copyShareUrlBtn = document.getElementById('copyShareUrl');
+            if (copyShareUrlBtn) {
+                copyShareUrlBtn.addEventListener('click', () => {
+                    navigator.clipboard.writeText(window.location.href).then(() => {
+                        const originalText = copyShareUrlBtn.textContent;
+                        copyShareUrlBtn.textContent = 'Copied!';
+                        setTimeout(() => {
+                            copyShareUrlBtn.textContent = originalText;
+                        }, 2000);
+                    });
+                });
+            }
+            
+            // Request initial status after a short delay
             setTimeout(() => {
                 if (window.obsController && window.obsController.requestStatus) {
                     window.obsController.requestStatus();
@@ -429,7 +443,7 @@ function main() {
             }, 2000);
         }
 
-        // 5. Set up keyboard shortcuts
+        // 7. Set up keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             // Don't trigger shortcuts if user is typing in any input field
             const activeElement = document.activeElement;
@@ -447,7 +461,6 @@ function main() {
             );
             
             if (isInputField) {
-                debug.log('BLOCKING shortcut - user is typing in input field');
                 return; // Don't trigger shortcuts when typing in inputs
             }
             
@@ -463,37 +476,34 @@ function main() {
                                    !activeElement; // Allow when no specific element is focused
             
             if (!isCanvasFocused) {
-                debug.log('BLOCKING shortcut - not focused on canvas area');
                 return; // Don't trigger shortcuts when not focused on canvas/overlay
             }
             
             // Handle specific shortcuts
             if (e.key === 's' || e.key === 'S') {
-                debug.log('Toggling grid visibility with S key');
                 e.preventDefault();
                 if (window.overlay) {
                     window.overlay.show = !window.overlay.show;
                     window.overlay.updateGridButtonState();
                 }
             } else if (e.key === 'r' || e.key === 'R') {
-                debug.log('Resetting grid with R key');
                 e.preventDefault();
                 if (window.overlay) {
                     window.overlay.resetGrid();
                 }
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                debug.log('Clearing drawing only with Delete key');
                 e.preventDefault();
                 // Clear only the drawing layer
                 if (window.drawingLayer) {
                     window.drawingLayer.clearCanvas();
                 }
                 // Send clear drawing command to viewer
-                if (window.commentatorSender && !window.isViewerMode) {
-                    window.commentatorSender.sendClearDrawing();
+                if (window.networkManager && !window.isViewerMode) {
+                    window.networkManager.send({
+                        action: 'clear-drawing'
+                    });
                 }
             } else if (e.key === ' ' || e.code === 'Space') {
-                debug.log('Clearing stones and drawing with spacebar');
                 e.preventDefault();
                 if (window.overlay) {
                     window.overlay.clearStones();
@@ -503,13 +513,15 @@ function main() {
                     window.drawingLayer.clearCanvas();
                 }
                 // Send clear all command to viewer
-                if (window.commentatorSender && !window.isViewerMode) {
-                    window.commentatorSender.sendClearAll();
+                if (window.networkManager && !window.isViewerMode) {
+                    window.networkManager.send({
+                        action: 'clear-all'
+                    });
                 }
             }
         });
 
-        // 6. Start animation loop
+        // 8. Start animation loop
         let overlayLoop = () => {
             requestAnimationFrame(overlayLoop);
             overlay.tick();
@@ -520,4 +532,4 @@ function main() {
 }
 
 // Initialize the application
-main(); 
+main();

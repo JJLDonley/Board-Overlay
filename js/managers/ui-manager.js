@@ -43,26 +43,6 @@ export class UIManager {
             });
         }
 
-        // Video connection
-        const videoBtn = document.getElementById('VideoButton');
-        if (videoBtn) {
-            videoBtn.addEventListener('click', () => {
-                const vdoLink = document.getElementById('VideoURL').value.trim();
-                if (vdoLink) {
-                    // Use iframe manager to ensure proper audio settings
-                    if (this.iframeManager && this.iframeManager.ensureFeedAudioSettings) {
-                        const processedUrl = this.iframeManager.ensureFeedAudioSettings(vdoLink);
-                        document.getElementById('feed').src = processedUrl;
-                    } else {
-                        document.getElementById('feed').src = vdoLink;
-                    }
-                    if (window.updateShareableUrl) {
-                        window.updateShareableUrl();
-                    }
-                }
-            });
-        }
-
         // Stone size
         const stoneSizeInput = document.getElementById('StoneSize');
         if (stoneSizeInput) {
@@ -90,7 +70,7 @@ export class UIManager {
         }
 
         // Update shareable URL on input changes and populate iframes
-        ['VideoURL', 'StoneSize', 'ObsWebSocket', 'ObsVdoUrl', 'ChatUrl', 'coordinateColor'].forEach(id => {
+        ['VideoURL', 'StoneSize', 'ObsVdoUrl', 'ChatUrl', 'coordinateColor', 'NetworkRoom'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('input', () => {
                 // Update URL
@@ -118,11 +98,6 @@ export class UIManager {
                         if (window.updateSidePanelVisibility) {
                             window.updateSidePanelVisibility();
                         }
-                        
-                        // Recreate data channel iframe with new room name
-                        if (this.iframeManager && this.iframeManager.setDataChannelUrl) {
-                            this.iframeManager.setDataChannelUrl(obsLink);
-                        }
                     }
                 } else if (id === 'ChatUrl') {
                     const chatUrl = el.value.trim();
@@ -133,10 +108,16 @@ export class UIManager {
                             window.updateSidePanelVisibility();
                         }
                     }
+                } else if (id === 'NetworkRoom') {
+                    const roomName = el.value.trim();
+                    if (roomName && window.networkManager) {
+                        // Update network connection
+                        window.networkManager.updateConnection(roomName);
+                    }
                 } else if (id === 'coordinateColor') {
                     // Send coordinate color change to viewer
-                    if (window.commentatorSender && !window.isViewerMode) {
-                        window.commentatorSender.sendCommand({
+                    if (window.networkManager && !window.isViewerMode) {
+                        window.networkManager.send({
                             action: 'coordinate-color',
                             color: el.value,
                             timestamp: Date.now()
@@ -147,12 +128,34 @@ export class UIManager {
             });
         });
 
-        // Copy share URL
-        const copyBtn = document.getElementById('copyShareUrl');
-        if (copyBtn) {
-            copyBtn.addEventListener('click', () => {
-                navigator.clipboard.writeText(window.location.href);
-                alert('Shareable URL copied!');
+        // Copy Viewer URL (View)
+        const copyViewerUrlBtn = document.getElementById('copyViewerUrl');
+        if (copyViewerUrlBtn) {
+            copyViewerUrlBtn.addEventListener('click', () => {
+                if (window.generateViewerUrl) {
+                    const url = window.generateViewerUrl();
+                    navigator.clipboard.writeText(url).then(() => {
+                        const originalText = copyViewerUrlBtn.textContent;
+                        copyViewerUrlBtn.textContent = 'Copied!';
+                        setTimeout(() => {
+                            copyViewerUrlBtn.textContent = originalText;
+                        }, 2000);
+                    });
+                }
+            });
+        }
+
+        // Copy Share URL (Comm)
+        const copyShareUrlBtn = document.getElementById('copyShareUrl');
+        if (copyShareUrlBtn) {
+            copyShareUrlBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(window.location.href).then(() => {
+                    const originalText = copyShareUrlBtn.textContent;
+                    copyShareUrlBtn.textContent = 'Copied!';
+                    setTimeout(() => {
+                        copyShareUrlBtn.textContent = originalText;
+                    }, 2000);
+                });
             });
         }
     }
@@ -194,4 +197,4 @@ export class UIManager {
             targetBtn.classList.remove('active');
         }
     }
-} 
+}

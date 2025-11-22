@@ -31,12 +31,6 @@ export class IframeManager {
             document.getElementById('ChatUrl').value = chatUrl;
             this.setUrl('chat', chatUrl);
         }
-        // Handle commentator view
-        if (params.has('commentator') && params.get('commentator') === 'true') {
-            if (params.has('room')) {
-                this.setCommentatorUrl(params.get('room'));
-            }
-        }
         // Handle VDO Ninja link
         const vdoLink = params.get('vdo');
         if (vdoLink) {
@@ -75,78 +69,17 @@ export class IframeManager {
         try {
             const urlObj = new URL(url);
             
-            // Check if &noaudio is in the URL
-            if (url.includes('&noaudio') || urlObj.searchParams.has('noaudio')) {
-                // Ensure noaudio parameter is present
-                urlObj.searchParams.set('noaudio', '');
-                // Also add mute parameter for extra safety
-                urlObj.searchParams.set('mute', '1');
-                debug.log('🔇 Feed URL contains noaudio - ensuring muted:', urlObj.toString());
-            }
+            // Always ensure noaudio parameter is present
+            urlObj.searchParams.set('noaudio', '');
+            // Also add mute parameter for extra safety
+            urlObj.searchParams.set('mute', '1');
+            debug.log('🔇 Feed URL ensuring muted:', urlObj.toString());
             
             return urlObj.toString();
         } catch (error) {
-            // If URL parsing fails, return original URL
-            debug.error('❌ Failed to parse feed URL for audio settings:', error);
+            debug.error('Failed to ensure feed audio settings:', error);
             return url;
         }
-    }
-
-    setDataChannelUrl(obsUrl) {
-        // Extract room name from OBS URL and recreate data channel
-        if (obsUrl && window.commentatorSender) {
-            const obsParams = new URLSearchParams(obsUrl.split('?')[1] || '');
-            const roomName = obsParams.get('view') || obsParams.get('push');
-            
-            if (roomName) {
-                debug.log('📡 Recreating data channel for new OBS room:', roomName);
-                
-                // Disable old connection
-                window.commentatorSender.disable();
-                
-                // Wait a moment then enable new connection
-                setTimeout(() => {
-                    window.commentatorSender.enable(roomName);
-                    debug.log('📡 Data channel recreated and enabled for OBS room:', roomName);
-                }, 500);
-            }
-        }
-    }
-
-    setViewerUrl(roomId) {
-        this.setVdoNinjaUrl('feed', {
-            view: roomId,
-            autoplay: '1',
-            controls: '0',
-            mute: '1',
-            noaudio: ''
-        });
-    }
-
-    setCommentatorUrl(roomId) {
-        // Special commentator URL with additional features
-        this.setVdoNinjaUrl('obs', {
-            room: roomId,
-            director: '1',
-            scene: '1',
-            bitrate: '8000',
-            quality: '2',
-            stereo: '1',
-            codec: 'h264',
-            label: 'Commentator View',
-            cleanoutput: '1',
-            broadcast: '1'
-        });
-
-        // Set up a broadcast view for the feed as well
-        this.setVdoNinjaUrl('feed', {
-            view: roomId,
-            scene: '1',
-            cleanish: '1',
-            noaudio: '1',
-            muted: '1',
-            autoplay: '1'
-        });
     }
 
     generateShareableUrl() {
@@ -160,7 +93,7 @@ export class IframeManager {
             params.set('grid', window.overlay.points.map(pt => pt.map(Number).map(n => Math.round(n)).join(',')).join(';'));
         }
         // Add obs_ws param last
-        const obsWebSocket = document.getElementById('ObsWebSocket').value;
+        const obsWebSocket = document.getElementById('ObsWebSocket')?.value;
         if (obsWebSocket) {
             // Use the original WebSocket URL without modification
             let formattedUrl = obsWebSocket;
@@ -181,4 +114,4 @@ export class IframeManager {
         }
         return `${window.location.origin}${window.location.pathname}?${params.toString()}`;
     }
-} 
+}
