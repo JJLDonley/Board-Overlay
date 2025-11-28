@@ -293,6 +293,57 @@ export class Canvas {
             this.drawCircle(stone);
             this.drawMarker(stone, index);
         });
+
+        // Draw hover stone if applicable
+        this.drawHoverStone();
+    }
+
+    drawHoverStone() {
+        // Only draw hover stone if:
+        // 1. Grid is set
+        // 2. Mouse is on canvas
+        // 3. Current tool is a stone tool
+        // 4. Not in viewer mode (local effect only)
+        if (!this.isGridSet || !this.grid.length || window.isViewerMode) return;
+        if (
+            this.currentMouseX === undefined || this.currentMouseY === undefined
+        ) return;
+
+        const stoneTools = ["BLACK", "WHITE", "ALTERNATING"];
+        if (!stoneTools.includes(currentTool)) return;
+
+        // Determine color to show
+        let hoverColor;
+        if (currentTool === "BLACK") {
+            hoverColor = STONES.BLACK;
+        } else if (currentTool === "WHITE") {
+            hoverColor = STONES.WHITE;
+        } else {
+            // Alternating
+            hoverColor = this.currentColor === "BLACK"
+                ? STONES.BLACK
+                : STONES.WHITE;
+        }
+
+        // Find closest grid point
+        const point = this.findClosestPoint(
+            this.currentMouseX,
+            this.currentMouseY,
+            this.grid,
+        );
+
+        // Check if point is already occupied by a variation stone
+        // (We allow hovering over board stones as they can be covered)
+        const isOccupied = this.stones.some(([x, y]) =>
+            x === point[0] && y === point[1]
+        );
+
+        if (!isOccupied) {
+            this.context.save();
+            this.context.globalAlpha = 0.6; // Semi-transparent
+            this.drawCircle([point[0], point[1], hoverColor]);
+            this.context.restore();
+        }
     }
 
     drawGrid() {
@@ -663,6 +714,135 @@ export class Canvas {
                 return;
             }
 
+            // Handle stone placement tools (BLACK, WHITE, ALTERNATING)
+            if (
+                ["BLACK", "WHITE", "ALTERNATING"].includes(currentTool) &&
+                event.button === 0
+            ) {
+                // Check if there's already a stone at this position
+                let existingStoneIndex = this.stones.findIndex(([x, y]) =>
+                    x === point[0] && y === point[1]
+                );
+
+                if (existingStoneIndex >= 0) {
+                    // Stone exists - check if same color or different
+                    let existingStone = this.stones[existingStoneIndex];
+                    let existingColor = existingStone[2];
+
+                    // Determine what color we're trying to place
+                    let colorToPlace;
+                    if (currentTool === "ALTERNATING") {
+                        colorToPlace = this.currentColor === "BLACK"
+                            ? STONES.BLACK
+                            : STONES.WHITE;
+                    } else {
+                        colorToPlace = currentTool === "BLACK"
+                            ? STONES.BLACK
+                            : STONES.WHITE;
+                    }
+
+                    if (existingColor === colorToPlace) {
+                        // Same color - remove the stone
+                        this.stones.splice(existingStoneIndex, 1);
+
+                        // Send remove command
+                        if (window.networkManager && !window.isViewerMode) {
+                            window.networkManager.send({
+                                action: "remove-stone",
+                                x: point[0],
+                                y: point[1],
+                            });
+
+                            // Also send grid
+                            if (this.points && this.points.length === 4) {
+                                window.networkManager.send({
+                                    action: "set-grid",
+                                    points: this.points,
+                                });
+                            }
+                        }
+                    } else {
+                        // Different color - replace the stone
+                        this.stones[existingStoneIndex] = [
+                            point[0],
+                            point[1],
+                            colorToPlace,
+                        ];
+
+                        // Send place command (will overwrite)
+                        if (window.networkManager && !window.isViewerMode) {
+                            window.networkManager.send({
+                                action: "place-stone",
+                                x: point[0],
+                                y: point[1],
+                                color:
+                                    currentTool === "BLACK" ||
+                                        (currentTool === "ALTERNATING" &&
+                                            this.currentColor === "BLACK")
+                                        ? "BLACK"
+                                        : "WHITE",
+                            });
+
+                            // Also send grid
+                            if (this.points && this.points.length === 4) {
+                                window.networkManager.send({
+                                    action: "set-grid",
+                                    points: this.points,
+                                });
+                            }
+                        }
+
+                        // Switch color if ALTERNATING
+                        if (currentTool === "ALTERNATING") {
+                            this.switchCurrentColor();
+                        }
+                    }
+                } else {
+                    // No stone exists - place new stone
+                    let colorToPlace;
+                    if (currentTool === "ALTERNATING") {
+                        colorToPlace = this.currentColor === "BLACK"
+                            ? STONES.BLACK
+                            : STONES.WHITE;
+                    } else {
+                        colorToPlace = currentTool === "BLACK"
+                            ? STONES.BLACK
+                            : STONES.WHITE;
+                    }
+
+                    this.stones.push([point[0], point[1], colorToPlace]);
+
+                    // Send place command
+                    if (window.networkManager && !window.isViewerMode) {
+                        window.networkManager.send({
+                            action: "place-stone",
+                            x: point[0],
+                            y: point[1],
+                            color:
+                                currentTool === "BLACK" ||
+                                    (currentTool === "ALTERNATING" &&
+                                        this.currentColor === "BLACK")
+                                    ? "BLACK"
+                                    : "WHITE",
+                        });
+
+                        // Also send grid
+                        if (this.points && this.points.length === 4) {
+                            window.networkManager.send({
+                                action: "set-grid",
+                                points: this.points,
+                            });
+                        }
+                    }
+
+                    // Switch color if ALTERNATING
+                    if (currentTool === "ALTERNATING") {
+                        this.switchCurrentColor();
+                    }
+                }
+                return;
+            }
+
             if (event.button === 2) { // Right click - handle board stones
                 let existingBoardStoneIndex = this.boardStones.findIndex((
                     [x, y],
@@ -710,92 +890,6 @@ export class Canvas {
                         }
                     }
                 }
-            } else if (event.button === 0) { // Left click - handle variation stones
-                let existingStoneIndex = this.stones.findIndex(([x, y]) =>
-                    x === point[0] && y === point[1]
-                );
-                if (existingStoneIndex >= 0) {
-                    // Remove existing stone
-                    this.stones.splice(existingStoneIndex, 1);
-
-                    // Send stone removal to viewer
-                    if (window.networkManager && !window.isViewerMode) {
-                        window.networkManager.send({
-                            action: "remove-stone",
-                            x: point[0],
-                            y: point[1],
-                            timestamp: Date.now(),
-                        });
-
-                        // Also send current grid coordinates with stone removal
-                        if (this.points && this.points.length === 4) {
-                            window.networkManager.send({
-                                action: "set-grid",
-                                points: this.points,
-                            });
-                            debug.log(
-                                "📐 Sent grid coordinates with stone removal:",
-                                this.points,
-                            );
-                        }
-                    }
-                } else {
-                    // Remove any board stone at this position
-                    let existingBoardStoneIndex = this.boardStones.findIndex((
-                        [x, y],
-                    ) => x === point[0] && y === point[1]);
-                    if (existingBoardStoneIndex >= 0) {
-                        this.boardStones.splice(existingBoardStoneIndex, 1);
-                    }
-
-                    // Determine which stone to place based on current tool
-                    let stoneToPlace;
-                    if (currentTool === "BLACK") {
-                        stoneToPlace = "BLACK";
-                    } else if (currentTool === "WHITE") {
-                        stoneToPlace = "WHITE";
-                    } else if (currentTool === "ALTERNATING") {
-                        stoneToPlace = this.currentColor;
-                    } else {
-                        stoneToPlace = this.currentColor; // fallback
-                    }
-
-                    this.stones.push([
-                        point[0],
-                        point[1],
-                        STONES[stoneToPlace],
-                    ]);
-
-                    // Send to viewer if network manager is available
-                    if (window.networkManager && !window.isViewerMode) {
-                        window.networkManager.send({
-                            action: "place-stone",
-                            x: point[0],
-                            y: point[1],
-                            color: stoneToPlace,
-                        });
-
-                        // Also send current grid coordinates with each stone placement
-                        if (this.points && this.points.length === 4) {
-                            window.networkManager.send({
-                                action: "set-grid",
-                                points: this.points,
-                            });
-                            debug.log(
-                                "📐 Sent grid coordinates with stone placement:",
-                                this.points,
-                            );
-                        }
-                    }
-                }
-
-                // Only alternate colors if using ALTERNATING tool and not holding shift
-                if (currentTool === "ALTERNATING" && !event.shiftKey) {
-                    this.currentColor = this.currentColor === "BLACK"
-                        ? "WHITE"
-                        : "BLACK";
-                    // Don't change the active button since we're in alternating mode
-                }
             }
         }
     }
@@ -837,6 +931,7 @@ export class Canvas {
                             action: "cursor-move",
                             x: this.currentMouseX,
                             y: this.currentMouseY,
+                            label: window.cursorLabel,
                             timestamp: Date.now(),
                         });
                         this.lastSentX = this.currentMouseX;
@@ -881,6 +976,7 @@ export class Canvas {
                             action: "cursor-move",
                             x: this.currentMouseX,
                             y: this.currentMouseY,
+                            label: window.cursorLabel,
                             timestamp: Date.now(),
                         });
                         this.lastSentX = this.currentMouseX;

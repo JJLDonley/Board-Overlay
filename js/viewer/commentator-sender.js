@@ -159,6 +159,10 @@ export class CommentatorSender {
                 }
                 break;
 
+            case "place-stone":
+                this.placeStone(command.x, command.y, command.color);
+                break;
+
             case "add-mark":
                 if (window.drawingLayer) {
                     window.drawingLayer.addMark(
@@ -212,9 +216,39 @@ export class CommentatorSender {
                 }
                 break;
 
-            case "cursor-move":
-                this.updateCursor(sender, command.x, command.y);
+            case "switch-color":
+                if (window.overlay) {
+                    window.overlay.currentColor = command.color;
+                    debug.log("🎨 Switched current color to:", command.color);
+                }
                 break;
+
+            case "remove-stone":
+                this.removeStone(command.x, command.y);
+                break;
+
+            case "cursor-move":
+                this.updateCursor(sender, command.x, command.y, command.label);
+                break;
+
+            case "set-label":
+                this.updateCursorLabel(sender, command.label);
+                break;
+        }
+    }
+
+    updateCursorLabel(senderId, label) {
+        let cursor = this.cursors.get(senderId);
+        if (cursor) {
+            cursor.label = label;
+            const labelEl = cursor.element.querySelector(".cursor-label");
+            if (labelEl) labelEl.textContent = label;
+        } else {
+            // If cursor doesn't exist yet, we can create it or just wait for a move
+            // For now, let's wait for a move as we don't have coordinates
+            debug.log(
+                `👤 Received label for unknown cursor ${senderId}: ${label}`,
+            );
         }
     }
 
@@ -354,6 +388,13 @@ export class CommentatorSender {
         });
     }
 
+    sendLabel(label) {
+        this.sendCommand({
+            action: "set-label",
+            label: label,
+        });
+    }
+
     sendGridCoordinates(points) {
         this.sendCommand({
             action: "set-grid",
@@ -367,6 +408,11 @@ export class CommentatorSender {
         if (!this.enabled || !window.overlay) return;
 
         debug.log("🔄 Sending full state snapshot...");
+
+        // Send my label
+        if (window.cursorLabel) {
+            this.sendLabel(window.cursorLabel);
+        }
 
         // Send grid coordinates if available
         if (window.overlay.points && window.overlay.points.length === 4) {
@@ -432,7 +478,53 @@ export class CommentatorSender {
         debug.log("📡 Sent complete current state to viewers");
     }
 
-    createCursorElement(senderId) {
+    placeStone(x, y, color) {
+        if (!window.overlay) return;
+
+        // Commentators don't scale coordinates (1:1)
+        // Remove any existing stone at this position
+        const existingIndex = window.overlay.stones.findIndex(
+            ([sx, sy]) => sx === x && sy === y,
+        );
+        if (existingIndex >= 0) {
+            window.overlay.stones.splice(existingIndex, 1);
+        }
+
+        // Add the new stone if not a removal command
+        if (color === "BLACK") {
+            window.overlay.stones.push([x, y, STONES.BLACK]);
+        } else if (color === "WHITE") {
+            window.overlay.stones.push([x, y, STONES.WHITE]);
+        } else if (color === "BOARD") {
+            // Handle board stones
+            window.overlay.boardStones.push([x, y, STONES.BOARD]);
+        } else if (color === "REMOVE_BOARD") {
+            // Remove board stone
+            const boardIndex = window.overlay.boardStones.findIndex(
+                ([sx, sy]) => sx === x && sy === y,
+            );
+            if (boardIndex >= 0) {
+                window.overlay.boardStones.splice(boardIndex, 1);
+            }
+        }
+
+        debug.log(`🪨 Placed ${color} stone at (${x}, ${y})`);
+    }
+
+    removeStone(x, y) {
+        if (!window.overlay) return;
+
+        // Remove stone from stones array
+        const stoneIndex = window.overlay.stones.findIndex(
+            ([sx, sy]) => sx === x && sy === y,
+        );
+        if (stoneIndex >= 0) {
+            window.overlay.stones.splice(stoneIndex, 1);
+            debug.log(`🗑️ Removed stone at (${x}, ${y})`);
+        }
+    }
+
+    createCursorElement(senderId, label) {
         // Create cursor container
         const container = document.createElement("div");
         container.id = `cursor-${senderId}`;
@@ -460,11 +552,10 @@ export class CommentatorSender {
         `;
 
         // Create label
-        const label = document.createElement("div");
-        // Extract a short ID or use CO_X if possible
-        const shortId = senderId.substring(0, 4);
-        label.textContent = `CO_${shortId}`;
-        label.style.cssText = `
+        const labelDiv = document.createElement("div");
+        labelDiv.className = "cursor-label";
+        labelDiv.textContent = label || `User ${senderId.substring(0, 4)}`;
+        labelDiv.style.cssText = `
             background-color: ${color};
             color: white;
             padding: 2px 6px;
@@ -478,7 +569,7 @@ export class CommentatorSender {
         `;
 
         container.appendChild(cursorSvg);
-        container.appendChild(label);
+        container.appendChild(labelDiv);
         document.body.appendChild(container);
 
         return container;
@@ -492,7 +583,7 @@ export class CommentatorSender {
         return Math.abs(hash);
     }
 
-    updateCursor(senderId, x, y) {
+    updateCursor(senderId, x, y, label) {
         if (!senderId) return;
 
         // In Commentator mode, we don't scale coordinates (1:1 with other commentators)
@@ -501,9 +592,10 @@ export class CommentatorSender {
         let cursor = this.cursors.get(senderId);
 
         if (!cursor) {
-            const element = this.createCursorElement(senderId);
+            const element = this.createCursorElement(senderId, label);
             cursor = {
                 element: element,
+                label: label,
                 currentX: x,
                 currentY: y,
                 targetX: x,
@@ -512,7 +604,16 @@ export class CommentatorSender {
                 timeout: null,
             };
             this.cursors.set(senderId, cursor);
-            debug.log(`👤 New cursor created for ${senderId}`);
+            debug.log(
+                `👤 New cursor created for ${senderId} with label: ${label}`,
+            );
+        } else {
+            // Update label if it changed
+            if (label && cursor.label !== label) {
+                cursor.label = label;
+                const labelEl = cursor.element.querySelector(".cursor-label");
+                if (labelEl) labelEl.textContent = label;
+            }
         }
 
         // Update target position

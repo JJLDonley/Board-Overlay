@@ -60,6 +60,11 @@ function updateShareableUrl() {
         params.set("coord_color", coordColor);
     }
 
+    // Add label param
+    if (window.cursorLabel) {
+        params.set("label", encodeURIComponent(window.cursorLabel));
+    }
+
     // Add role if viewer mode
     if (window.isViewerMode) {
         params.set("role", "VW");
@@ -94,10 +99,12 @@ function loadConfigFromUrl() {
 
     // Check for viewer mode
     const viewerMode = params.get("viewer");
-    if (viewerMode) {
-        debug.log("🎥 Viewer mode enabled for session:", viewerMode);
+    const role = params.get("role");
+
+    if (viewerMode || role === "VW") {
+        debug.log("🎥 Viewer mode enabled");
         window.isViewerMode = true;
-        window.viewerSessionId = viewerMode;
+        if (viewerMode) window.viewerSessionId = viewerMode;
         setupViewerMode();
         // Continue with config loading to get VDO link and grid setup
     }
@@ -203,6 +210,74 @@ function loadConfigFromUrl() {
     }
 
     // Note: OBS WebSocket URL parameters are no longer used since we switched to iframe communication
+}
+
+function handleUserLabel() {
+    // Check URL params first (highest priority)
+    const params = new URLSearchParams(window.location.search);
+    let label = params.get("label");
+
+    // If no URL label and NOT viewer mode, prompt user
+    if (!label && !window.isViewerMode) {
+        // Get saved label for default value
+        const savedLabel = localStorage.getItem("userLabel") || "";
+
+        label = prompt(
+            "Please enter your name for the cursor label:",
+            savedLabel,
+        );
+
+        if (label) {
+            localStorage.setItem("userLabel", label);
+        }
+    }
+
+    window.cursorLabel = label;
+    debug.log("👤 User label set to:", label);
+
+    // Update OBS URL with the label
+    updateObsUrlWithLabel(label);
+
+    // Always update shareable URL to persist label
+    updateShareableUrl();
+}
+
+function updateObsUrlWithLabel(label) {
+    const obsVdoUrlInput = document.getElementById("ObsVdoUrl");
+    const obsElement = document.getElementById("obs");
+
+    if (!obsVdoUrlInput || !obsVdoUrlInput.value) return;
+
+    let currentUrl = obsVdoUrlInput.value;
+    let newUrl = currentUrl;
+
+    // Check if label parameter already exists
+    if (currentUrl.includes("label=")) {
+        newUrl = currentUrl.replace(
+            /label=[^&]*/,
+            `label=${encodeURIComponent(label)}`,
+        );
+    } else if (currentUrl.includes("labelsuggestion=")) {
+        // Replace labelsuggestion with label
+        newUrl = currentUrl.replace(
+            /labelsuggestion=[^&]*/,
+            `label=${encodeURIComponent(label)}`,
+        );
+    } else {
+        // Append label
+        const separator = currentUrl.includes("?") ? "&" : "?";
+        newUrl = `${currentUrl}${separator}label=${encodeURIComponent(label)}`;
+    }
+
+    if (newUrl !== currentUrl) {
+        debug.log("🔄 Updating OBS URL with label:", newUrl);
+        obsVdoUrlInput.value = newUrl;
+        if (obsElement) {
+            obsElement.src = newUrl;
+        }
+        // Also update the main URL param if it exists
+        updateShareableUrl();
+    }
 }
 
 function updateSidePanelVisibility() {
@@ -369,6 +444,9 @@ function main() {
 
         // 3. Now load config from URL (overlay is defined)
         loadConfigFromUrl();
+
+        // 3.1 Handle user label
+        handleUserLabel();
 
         // 3.5. Update canvas dimensions after viewer mode is determined
         if (overlay && overlay.updateCanvasDimensions) {
