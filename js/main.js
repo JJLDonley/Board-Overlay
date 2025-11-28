@@ -249,24 +249,32 @@ function updateObsUrlWithLabel(label) {
     if (!obsVdoUrlInput || !obsVdoUrlInput.value) return;
 
     let currentUrl = obsVdoUrlInput.value;
-    let newUrl = currentUrl;
 
-    // Check if label parameter already exists
-    if (currentUrl.includes("label=")) {
-        newUrl = currentUrl.replace(
+    // 1. Remove labelsuggestion flag (with or without value, though usually it's just a flag)
+    // Handles:
+    // &labelsuggestion=abc
+    // &labelsuggestion
+    // ?labelsuggestion
+    // ?labelsuggestion=abc
+    let newUrl = currentUrl.replace(
+        /([&?])labelsuggestion(?:=[^&]*)?(?:&|$)/g,
+        "$1",
+    );
+
+    // Clean up trailing & or ? if they were left behind by the replacement
+    if (newUrl.endsWith("&") || newUrl.endsWith("?")) {
+        newUrl = newUrl.slice(0, -1);
+    }
+
+    // 2. Add or Update label
+    if (newUrl.includes("label=")) {
+        newUrl = newUrl.replace(
             /label=[^&]*/,
             `label=${encodeURIComponent(label)}`,
         );
-    } else if (currentUrl.includes("labelsuggestion=")) {
-        // Replace labelsuggestion with label
-        newUrl = currentUrl.replace(
-            /labelsuggestion=[^&]*/,
-            `label=${encodeURIComponent(label)}`,
-        );
     } else {
-        // Append label
-        const separator = currentUrl.includes("?") ? "&" : "?";
-        newUrl = `${currentUrl}${separator}label=${encodeURIComponent(label)}`;
+        const separator = newUrl.includes("?") ? "&" : "?";
+        newUrl = `${newUrl}${separator}label=${encodeURIComponent(label)}`;
     }
 
     if (newUrl !== currentUrl) {
