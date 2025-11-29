@@ -123,16 +123,9 @@ export class Canvas {
     }
 
     initializeCanvas() {
-        // Set canvas dimensions based on mode
-        if (window.isViewerMode) {
-            // Viewer mode: 1920x1080 for OBS overlay
-            this.canvas.width = 1920;
-            this.canvas.height = 1080;
-        } else {
-            // Main page: 1280x720 for commentary
-            this.canvas.width = 1280;
-            this.canvas.height = 720;
-        }
+        // Always use 1920x1080 for internal resolution
+        this.canvas.width = 1920;
+        this.canvas.height = 1080;
 
         // Make canvas focusable for keyboard shortcuts
         this.canvas.tabIndex = 0;
@@ -140,16 +133,9 @@ export class Canvas {
     }
 
     updateCanvasDimensions() {
-        // Update canvas dimensions based on current mode
-        if (window.isViewerMode) {
-            // Viewer mode: 1920x1080 for OBS overlay
-            this.canvas.width = 1920;
-            this.canvas.height = 1080;
-        } else {
-            // Main page: 1280x720 for commentary
-            this.canvas.width = 1280;
-            this.canvas.height = 720;
-        }
+        // Always use 1920x1080 for internal resolution
+        this.canvas.width = 1920;
+        this.canvas.height = 1080;
     }
 
     bindEventListeners() {
@@ -498,6 +484,8 @@ export class Canvas {
         let scale = 1;
         if (stone_color === STONES.BLACK || stone_color === STONES.WHITE) {
             scale = 1.25;
+        } else if (stone_color === STONES.BOARD) {
+            scale = 1.25 + 0.025;
         }
         const drawSize = stoneSize * scale * this.getScalingFactor();
         const offset = drawSize / 2;
@@ -719,6 +707,23 @@ export class Canvas {
                 ["BLACK", "WHITE", "ALTERNATING"].includes(currentTool) &&
                 event.button === 0
             ) {
+                // Check if there's a board stone at this position and remove it
+                let existingBoardStoneIndex = this.boardStones.findIndex((
+                    [x, y],
+                ) => x === point[0] && y === point[1]);
+                if (existingBoardStoneIndex >= 0) {
+                    this.boardStones.splice(existingBoardStoneIndex, 1);
+                    // Send remove board command
+                    if (window.networkManager && !window.isViewerMode) {
+                        window.networkManager.send({
+                            action: "place-stone",
+                            x: point[0],
+                            y: point[1],
+                            color: "REMOVE_BOARD",
+                        });
+                    }
+                }
+
                 // Check if there's already a stone at this position
                 let existingStoneIndex = this.stones.findIndex(([x, y]) =>
                     x === point[0] && y === point[1]
@@ -775,12 +780,11 @@ export class Canvas {
                                 action: "place-stone",
                                 x: point[0],
                                 y: point[1],
-                                color:
-                                    currentTool === "BLACK" ||
+                                color: currentTool === "BLACK" ||
                                         (currentTool === "ALTERNATING" &&
                                             this.currentColor === "BLACK")
-                                        ? "BLACK"
-                                        : "WHITE",
+                                    ? "BLACK"
+                                    : "WHITE",
                             });
 
                             // Also send grid
@@ -818,12 +822,11 @@ export class Canvas {
                             action: "place-stone",
                             x: point[0],
                             y: point[1],
-                            color:
-                                currentTool === "BLACK" ||
+                            color: currentTool === "BLACK" ||
                                     (currentTool === "ALTERNATING" &&
                                         this.currentColor === "BLACK")
-                                    ? "BLACK"
-                                    : "WHITE",
+                                ? "BLACK"
+                                : "WHITE",
                         });
 
                         // Also send grid
@@ -1051,9 +1054,9 @@ export class Canvas {
         return [clientX * scaleX, clientY * scaleY];
     }
 
-    // Get scaling factor for viewer mode (1920/1280 = 1.5)
+    // Get scaling factor - always 1 now as we use unified resolution
     getScalingFactor() {
-        return window.isViewerMode ? 1.5 : 1;
+        return 1;
     }
 
     // Scale coordinates for viewer mode

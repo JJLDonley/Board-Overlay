@@ -1,4 +1,5 @@
 import { debug } from "../utils/debugger.js";
+import { STONES } from "../constants.js";
 import { VdoNinjaNetwork } from "../../network/network.js";
 
 export class ViewerController {
@@ -121,6 +122,10 @@ export class ViewerController {
                 this.updateCursorLabel(sender, command.label);
                 break;
 
+            case "clear-all":
+                this.clearAll();
+                break;
+
             default:
                 debug.log("🤷 Unknown command:", command.action);
                 break;
@@ -157,10 +162,8 @@ export class ViewerController {
         context.lineCap = "round"; // Smooth line ends
         context.lineJoin = "round"; // Smooth line joins
 
-        // Scale all points for viewer mode
-        const scaledPoints = points.map((point) => {
-            return window.drawingLayer.scaleCoordinates(point[0], point[1]);
-        });
+        // Points are already in 1920x1080
+        const scaledPoints = points;
 
         // If we only have one point, draw a small dot
         if (scaledPoints.length === 1) {
@@ -342,22 +345,20 @@ export class ViewerController {
         return Math.abs(hash);
     }
 
-    // Get scaling factor for viewer mode (1.5 for 1920/1280, 1 for main page)
+    // Scaling is now handled by CSS, internal resolution is always 1920x1080
     getScalingFactor() {
-        return window.isViewerMode ? 1.5 : 1;
+        return 1;
     }
 
-    // Scale coordinates from 1280x720 to 1920x1080
     scaleCoordinates(x, y) {
-        const scale = this.getScalingFactor();
-        return [x * scale, y * scale];
+        return [x, y];
     }
 
     updateCursor(senderId, x, y, label) {
         if (!senderId) return;
 
-        // Scale coordinates from commentator (1280x720) to viewer (1920x1080)
-        const [scaledX, scaledY] = this.scaleCoordinates(x, y);
+        // Coordinates are already 1920x1080
+        const [scaledX, scaledY] = [x, y];
 
         let cursor = this.cursors.get(senderId);
 
@@ -400,6 +401,20 @@ export class ViewerController {
             cursor.element.style.opacity = "0";
             // We keep the element in DOM but hide it
         }, 3000);
+    }
+
+    updateCursorLabel(senderId, label) {
+        if (!senderId) return;
+
+        const cursor = this.cursors.get(senderId);
+        if (cursor) {
+            cursor.label = label;
+            const labelEl = cursor.element.querySelector(".cursor-label");
+            if (labelEl) {
+                labelEl.textContent = label;
+            }
+            debug.log(`🏷️ Updated label for ${senderId} to: ${label}`);
+        }
     }
 
     createCursorElement(senderId, label) {
@@ -498,8 +513,8 @@ export class ViewerController {
     placeStone(x, y, color) {
         if (!window.overlay) return;
 
-        // Scale coordinates for viewer mode
-        const [scaledX, scaledY] = this.scaleCoordinates(x, y);
+        // Coordinates are already 1920x1080
+        const [scaledX, scaledY] = [x, y];
 
         // Remove any existing stone at this position
         const existingIndex = window.overlay.stones.findIndex(
@@ -507,6 +522,14 @@ export class ViewerController {
         );
         if (existingIndex >= 0) {
             window.overlay.stones.splice(existingIndex, 1);
+        }
+
+        // Remove any existing board stone at this position
+        const existingBoardIndex = window.overlay.boardStones.findIndex(
+            ([sx, sy]) => sx === scaledX && sy === scaledY,
+        );
+        if (existingBoardIndex >= 0) {
+            window.overlay.boardStones.splice(existingBoardIndex, 1);
         }
 
         // Add the new stone if not a removal command
@@ -547,8 +570,8 @@ export class ViewerController {
     removeStone(x, y) {
         if (!window.overlay) return;
 
-        // Scale coordinates for viewer mode
-        const [scaledX, scaledY] = this.scaleCoordinates(x, y);
+        // Coordinates are already 1920x1080
+        const [scaledX, scaledY] = [x, y];
 
         // Remove stone from stones array
         const stoneIndex = window.overlay.stones.findIndex(

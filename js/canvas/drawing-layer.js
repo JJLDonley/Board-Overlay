@@ -21,16 +21,9 @@ export class DrawingLayer {
     }
 
     initializeCanvas() {
-        // Set canvas dimensions based on mode
-        if (window.isViewerMode) {
-            // Viewer mode: 1920x1080 for OBS overlay
-            this.canvas.width = 1920;
-            this.canvas.height = 1080;
-        } else {
-            // Main page: 1280x720 for commentary
-            this.canvas.width = 1280;
-            this.canvas.height = 720;
-        }
+        // Always use 1920x1080 for internal resolution
+        this.canvas.width = 1920;
+        this.canvas.height = 1080;
 
         // Make canvas focusable for keyboard shortcuts
         this.canvas.tabIndex = 0;
@@ -41,16 +34,9 @@ export class DrawingLayer {
     }
 
     updateCanvasDimensions() {
-        // Update canvas dimensions based on current mode
-        if (window.isViewerMode) {
-            // Viewer mode: 1920x1080 for OBS overlay
-            this.canvas.width = 1920;
-            this.canvas.height = 1080;
-        } else {
-            // Main page: 1280x720 for commentary
-            this.canvas.width = 1280;
-            this.canvas.height = 720;
-        }
+        // Always use 1920x1080 for internal resolution
+        this.canvas.width = 1920;
+        this.canvas.height = 1080;
     }
 
     getPenColor() {
@@ -582,9 +568,9 @@ export class DrawingLayer {
         return [offsetX * scaleX, offsetY * scaleY];
     }
 
-    // Get scaling factor for viewer mode (1920/1280 = 1.5)
+    // Get scaling factor - always 1 now as we use unified resolution
     getScalingFactor() {
-        return window.isViewerMode ? 1.5 : 1;
+        return 1;
     }
 
     // Scale coordinates for viewer mode

@@ -192,10 +192,26 @@
       </div>
 
       <div class="content-area">
-        <div class="main-feed">
-          <iframe id="feed" class="largeIframe" allow="autoplay"></iframe>
-          <canvas id="overlay" class="largeCanvas"></canvas>
-          <canvas id="drawingLayer" class="largeCanvas"></canvas>
+        <div class="feed-container">
+          <div class="main-feed">
+            <iframe id="feed" class="largeIframe" allow="autoplay"></iframe>
+            <canvas
+              id="overlay"
+              class="largeCanvas"
+              width="1920"
+              height="1080"
+              tabindex="0"
+              style="outline: none"
+            ></canvas>
+            <canvas
+              id="drawingLayer"
+              class="largeCanvas"
+              width="1920"
+              height="1080"
+              tabindex="0"
+              style="outline: none"
+            ></canvas>
+          </div>
         </div>
         <div class="SidePanel">
           <div
