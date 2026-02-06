@@ -44,6 +44,10 @@ export class DrawingLayer {
         return colorInput ? colorInput.value : "red";
     }
 
+    getLocalOwnerId() {
+        return window.localOwnerId || window.cursorLabel || "local";
+    }
+
     bindEventListeners() {
         this.canvas.addEventListener("mousedown", this.startDrawing.bind(this));
         this.canvas.addEventListener(
@@ -66,11 +70,6 @@ export class DrawingLayer {
             this.canvas.focus();
         });
 
-        document.addEventListener("keydown", (e) => {
-            if (e.key === "Delete") {
-                this.clearCanvas();
-            }
-        });
         // Listen for color changes
         const colorInput = document.getElementById("markupColor");
         if (colorInput) {
@@ -81,13 +80,16 @@ export class DrawingLayer {
     }
 
     startDrawing(e) {
+        if (window.isViewerMode) return;
         if (window.currentTool !== "PEN") return;
         this.isDrawing = true;
         const [x, y] = this.getCanvasCoords(e.offsetX, e.offsetY);
+        const ownerId = this.getLocalOwnerId();
         this.currentPath = {
             points: [[x, y]],
             type: "path",
             color: this.getPenColor(),
+            ownerId: ownerId,
         };
         this.context.beginPath();
         this.context.strokeStyle = this.getPenColor();
@@ -105,6 +107,7 @@ export class DrawingLayer {
                 y: y,
                 tool: "PEN",
                 color: this.getPenColor(),
+                ownerId: ownerId,
                 timestamp: Date.now(),
             });
         }
@@ -140,6 +143,7 @@ export class DrawingLayer {
                 points: [...this.drawingBatch], // Copy the array
                 tool: "PEN",
                 color: this.getPenColor(),
+                ownerId: this.getLocalOwnerId(),
                 timestamp: Date.now(),
             });
 
@@ -185,6 +189,10 @@ export class DrawingLayer {
                                 action: "cursor-move",
                                 x: window.overlay.currentMouseX,
                                 y: window.overlay.currentMouseY,
+                                label: window.cursorLabel,
+                                ownerId: this.getLocalOwnerId(),
+                                color: window.currentUserColor,
+                                hostTag: window.hostTag || null,
                                 timestamp: Date.now(),
                             });
                             window.overlay.lastSentX =
@@ -279,6 +287,7 @@ export class DrawingLayer {
                     y: 0,
                     tool: "PEN",
                     color: this.getPenColor(),
+                    ownerId: this.getLocalOwnerId(),
                     timestamp: Date.now(),
                 });
             }
@@ -315,6 +324,85 @@ export class DrawingLayer {
         }
     }
 
+    clearOwner(ownerId) {
+        if (!ownerId) return;
+        this.marks = this.marks.filter((mark) => mark.ownerId !== ownerId);
+        this.paths = this.paths.filter((path) => path.ownerId !== ownerId);
+        if (this.currentPath && this.currentPath.ownerId === ownerId) {
+            this.currentPath = null;
+            this.isDrawing = false;
+        }
+        this.redrawAll();
+    }
+
+    addPathSegment(ownerId, points, color) {
+        if (!points || points.length === 0) return;
+        this.paths.push({
+            points: points.map((point) => [...point]),
+            type: "path",
+            color: color,
+            ownerId: ownerId,
+        });
+    }
+
+    drawSmoothBatch(points, color) {
+        if (!this.context || !points || points.length === 0) return;
+
+        const originalColor = this.context.strokeStyle;
+        const originalLineWidth = this.context.lineWidth;
+
+        const smoothPoints = this.interpolatePath(
+            points,
+            3 * this.getScalingFactor(),
+        );
+
+        if (color) {
+            this.context.strokeStyle = color;
+        }
+        this.context.lineWidth = 2 * this.getScalingFactor();
+        this.context.lineCap = "round";
+        this.context.lineJoin = "round";
+
+        if (smoothPoints.length === 1) {
+            this.context.beginPath();
+            const radius = 1 * this.getScalingFactor();
+            this.context.arc(
+                smoothPoints[0][0],
+                smoothPoints[0][1],
+                radius,
+                0,
+                2 * Math.PI,
+            );
+            this.context.fill();
+            return;
+        }
+
+        this.context.beginPath();
+        this.context.moveTo(smoothPoints[0][0], smoothPoints[0][1]);
+
+        for (let i = 1; i < smoothPoints.length; i++) {
+            const currentPoint = smoothPoints[i];
+            if (i === smoothPoints.length - 1) {
+                this.context.lineTo(currentPoint[0], currentPoint[1]);
+            } else {
+                const nextPoint = smoothPoints[i + 1];
+                const controlX = (currentPoint[0] + nextPoint[0]) / 2;
+                const controlY = (currentPoint[1] + nextPoint[1]) / 2;
+                this.context.quadraticCurveTo(
+                    currentPoint[0],
+                    currentPoint[1],
+                    controlX,
+                    controlY,
+                );
+            }
+        }
+
+        this.context.stroke();
+
+        this.context.strokeStyle = originalColor;
+        this.context.lineWidth = originalLineWidth;
+    }
+
     // Cleanup method for when the drawing layer is destroyed
     destroy() {
         if (this.batchInterval) {
@@ -324,8 +412,15 @@ export class DrawingLayer {
         this.drawingBatch = [];
     }
 
-    addMark(type, x, y, text = "") {
-        const mark = { type, x, y, text };
+    addMark(type, x, y, text = "", ownerId = null, color = null) {
+        const mark = {
+            type,
+            x,
+            y,
+            text,
+            ownerId: ownerId || this.getLocalOwnerId(),
+            color: color || this.getPenColor(),
+        };
         this.marks.push(mark);
         this.drawMark(mark);
     }
@@ -365,7 +460,7 @@ export class DrawingLayer {
     }
 
     // Interpolate path points to create smooth lines
-    interpolatePath(points) {
+    interpolatePath(points, maxStep = null) {
         if (points.length < 2) return points;
 
         const interpolated = [];
@@ -385,7 +480,9 @@ export class DrawingLayer {
 
             // If points are far apart, add interpolation points
             // Scale the interpolation distance based on viewer mode
-            const interpolationDistance = window.isViewerMode ? 5 * scale : 5;
+            const interpolationDistance = maxStep !== null
+                ? maxStep
+                : (window.isViewerMode ? 5 * scale : 5);
             if (distance > interpolationDistance) {
                 const steps = Math.ceil(distance / interpolationDistance);
                 for (let j = 1; j < steps; j++) {
@@ -403,12 +500,11 @@ export class DrawingLayer {
         return interpolated;
     }
 
-    drawMark({ type, x, y, text }) {
-        const colorInput = document.getElementById("markupColor");
-        const fillColor = colorInput ? colorInput.value : "white";
+    drawMark({ type, x, y, text, color }) {
+        const markColor = color || this.getPenColor();
         this.context.save();
-        this.context.strokeStyle = "black"; // Default outline
-        this.context.fillStyle = fillColor;
+        this.context.strokeStyle = markColor;
+        this.context.fillStyle = markColor;
         this.context.lineWidth = 2;
 
         switch (type) {
@@ -424,9 +520,9 @@ export class DrawingLayer {
             case "LETTER": {
                 // Scale coordinates for viewer mode
                 const [scaledX, scaledY] = this.scaleCoordinates(x, y);
-                // Always use white fill and black outline for letters
+                // Use the owner color with a black outline for legibility
                 this.context.strokeStyle = "black";
-                this.context.fillStyle = "white";
+                this.context.fillStyle = markColor;
                 this.context.lineWidth = 3 * this.getScalingFactor();
                 this.context.font = `${24 * this.getScalingFactor()}px Arial`;
                 this.context.strokeText(
@@ -605,6 +701,10 @@ export class DrawingLayer {
                             action: "cursor-move",
                             x: window.overlay.currentMouseX,
                             y: window.overlay.currentMouseY,
+                            label: window.cursorLabel,
+                            ownerId: this.getLocalOwnerId(),
+                            color: window.currentUserColor,
+                            hostTag: window.hostTag || null,
                             timestamp: Date.now(),
                         });
                         window.overlay.lastSentX = window.overlay.currentMouseX;
@@ -628,25 +728,26 @@ export class DrawingLayer {
     }
 
     // Methods for viewer to replicate drawing actions
-    startDrawingAt(x, y, tool) {
+    startDrawingAt(x, y, tool, color = null, ownerId = null) {
         this.isDrawing = true;
         this.currentPath = {
             points: [[x, y]],
             type: "path",
-            color: this.getPenColor(),
+            color: color || this.getPenColor(),
+            ownerId: ownerId || this.getLocalOwnerId(),
         };
         this.context.beginPath();
-        this.context.strokeStyle = this.getPenColor();
+        this.context.strokeStyle = color || this.getPenColor();
         this.context.moveTo(x, y);
     }
 
-    drawTo(x, y) {
+    drawTo(x, y, color = null) {
         if (!this.isDrawing) return;
         if (this.currentPath) {
             this.currentPath.points.push([x, y]);
         }
         this.context.lineTo(x, y);
-        this.context.strokeStyle = this.getPenColor();
+        this.context.strokeStyle = color || this.getPenColor();
         this.context.stroke();
     }
 

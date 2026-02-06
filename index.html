@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8">
@@ -12,152 +12,100 @@
     >
   </head>
   <body>
-    <div class="page-container">
-      <!-- Minimal Top Bar -->
-      <div class="top-bar">
-        <div class="minimal-controls">
-          <button
-            id="toggleReview"
-            class="icon-btn"
-            title="Toggle Review Tools"
-          >
-            <i class="fas fa-pen"></i>
-          </button>
-          <button id="toggleSettings" class="icon-btn" title="Toggle Settings">
-            <i class="fas fa-cog"></i>
-          </button>
-          <button
-            id="toggleObsControl"
-            class="icon-btn"
-            title="Toggle OBS Controls"
-          >
-            <i class="fas fa-video"></i>
-          </button>
-        </div>
+    <div id="landing" class="landing-page">
+      <div class="landing-shell">
+        <header class="landing-header">
+          <span class="landing-eyebrow">Board Overlay</span>
+          <h1>Session Setup</h1>
+          <p>
+            Enter the session details, generate host links, and share them
+            before going live.
+          </p>
+        </header>
 
-        <!-- Review Tools Panel -->
-        <div id="reviewPanel" class="tool-panel hidden">
-          <div class="tool-group">
-            <button
-              id="BlackStoneBtn"
-              class="tool-btn"
-              title="Place Black Stone"
-            >
-              ⚫
-            </button>
-            <button
-              id="WhiteStoneBtn"
-              class="tool-btn"
-              title="Place White Stone"
-            >
-              ⚪
-            </button>
-            <button
-              id="AlternatingBtn"
-              class="tool-btn"
-              title="Alternating Stones (Black/White)"
-            >
-              ⚫⚪
-            </button>
-            <button id="PenBtn" class="tool-btn" title="Free Draw">✏️</button>
-            <button id="TriangleBtn" class="tool-btn" title="Triangle Mark">
-              △
-            </button>
-            <button id="CircleBtn" class="tool-btn" title="Circle Mark">
-              ○
-            </button>
-            <button id="SquareBtn" class="tool-btn" title="Square Mark">
-              □
-            </button>
-            <button id="LetterBtn" class="tool-btn" title="Place Letter">
-              A
-            </button>
-            <button id="GridBtn" class="tool-btn" title="Toggle Grid">
-              #
-            </button>
-            <button id="CoordBtn" class="tool-btn" title="Toggle Coordinates">
-              A1
-            </button>
-            <input
-              type="color"
-              id="markupColor"
-              value="#ff0000"
-              title="Markup/Letter Color"
-              style="width: 32px; height: 32px; border: none; background: none; margin-left: 8px; vertical-align: middle"
-            >
-            <input
-              type="color"
-              id="coordinateColor"
-              value="#ffffff"
-              title="Coordinate Color"
-              style="width: 32px; height: 32px; border: none; background: none; margin-left: 8px; vertical-align: middle"
-            >
-            <div class="shortcut-help">
-              <span>Shortcuts: S=Grid | R=Reset | Space=Clear All | Del=Clear
-                Drawing | Q=Switch Color Order</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Settings Panel -->
-        <div id="settingsPanel" class="tool-panel hidden">
-          <div class="settings-group">
-            <div class="setting-item">
-              <label
-                for="VideoURL"
-                title="VDO Ninja Camera for Canvas Dimensions"
-              >Feed (Camera for board):</label>
+        <div class="landing-grid">
+          <section class="landing-panel">
+            <h2>Session Details</h2>
+            <div class="landing-fields">
+              <label for="VideoURL">OTB (Over-The-Board) Feed</label>
               <input
                 type="text"
                 id="VideoURL"
-                placeholder="VDO Ninja view link for canvas dimensions"
+                placeholder="OTB feed URL (used for OTB parameter)"
               >
-            </div>
-            <div class="setting-item">
-              <label for="NetworkRoom" title="VDO Ninja Room Name for Network"
-              >Room (For network):</label>
+
+              <label for="NetworkRoom">Network (Room)</label>
               <input
                 type="text"
                 id="NetworkRoom"
-                placeholder="Room name for networking"
+                placeholder="Network room name (Network parameter)"
               >
-            </div>
-            <div class="setting-item">
-              <label for="StoneSize" title="Adjust Stone Size"
-              >Stone Size:</label>
-              <input type="number" id="StoneSize" value="80" min="20" max="200">
-            </div>
-            <div class="setting-item">
-              <label for="ChatUrl" title="Custom Chat URL">Chat URL:</label>
-              <input
-                type="text"
-                id="ChatUrl"
-                placeholder="Paste chat embed URL here"
-              >
-            </div>
-            <div class="setting-item">
-              <label for="ObsVdoUrl" title="OBS VDO Ninja Link"
-              >OBS Controller:</label>
+
+              <label for="ObsVdoUrl">OBS Controller (VDO Ninja)</label>
               <input
                 type="text"
                 id="ObsVdoUrl"
-                placeholder="Paste OBS VDO Ninja link here"
+                placeholder="OBS VDO Ninja link (obs parameter)"
+              >
+
+              <label for="ChatUrl">Chat (Embed URL)</label>
+              <input
+                type="text"
+                id="ChatUrl"
+                placeholder="Chat embed URL (Chat parameter)"
               >
             </div>
 
-            <div class="setting-item">
-              <button id="copyViewerUrl" title="Copy Viewer URL for Chroma Key">
-                View
-              </button>
-              <button id="copyShareUrl" title="Copy Shareable URL">
-                Comm
-              </button>
+            <details class="landing-advanced">
+              <summary>Advanced</summary>
+              <div class="landing-advanced-grid">
+                <label for="StoneSize">Stone Size (stone)</label>
+                <input type="number" id="StoneSize" value="80" min="20" max="200">
+              </div>
+            </details>
+          </section>
+
+          <section class="landing-panel">
+            <h2>Hosts</h2>
+            <div class="host-entry">
+              <button id="addHostSlot" type="button">Add Host</button>
+              <span class="host-hint">Generate up to two host links.</span>
             </div>
-          </div>
+            <div id="hostSlotList" class="host-list"></div>
+          </section>
+
+          <section class="landing-panel landing-actions">
+            <h2>Viewer Link</h2>
+            <div class="viewer-link">
+              <input
+                type="text"
+                id="viewerUrlOutput"
+                readonly
+                placeholder="Viewer URL appears here"
+              >
+              <button id="copyViewerUrl" type="button">Copy Viewer URL</button>
+            </div>
+            <p class="viewer-hint">
+              Viewer link updates as you edit the session details.
+            </p>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="app" class="page-container">
+      <div class="top-bar">
+        <div class="header-controls">
+          <button id="toggleHelp" class="header-btn" type="button">
+            Help
+          </button>
+          <label class="marker-toggle">
+            <input type="checkbox" id="stoneMarkerToggle">
+            Triangle Labels
+          </label>
         </div>
 
-        <!-- OBS Control Panel -->
-        <div id="obsControlPanel" class="tool-panel hidden">
+        <div id="obsControlPanel" class="tool-panel obs-inline">
           <div class="obs-control-group">
             <div class="obs-status">
               <span
@@ -190,6 +138,74 @@
           </div>
         </div>
       </div>
+
+      <aside class="floating-toolbar">
+        <div class="toolbar-handle" title="Drag toolbar" aria-label="Drag toolbar">
+          <span class="toolbar-dots"></span>
+        </div>
+        <div class="tool-group-vertical">
+          <button id="BlackStoneBtn" class="tool-btn" title="Place Black Stone">
+            <i class="fa-solid fa-circle"></i>
+          </button>
+          <button id="WhiteStoneBtn" class="tool-btn" title="Place White Stone">
+            <i class="fa-regular fa-circle"></i>
+          </button>
+          <button
+            id="AlternatingBtn"
+            class="tool-btn"
+            title="Alternating Stones (Black/White)"
+          >
+            <span class="icon-stack">
+              <i class="fa-solid fa-circle"></i>
+              <i class="fa-regular fa-circle"></i>
+            </span>
+          </button>
+          <button id="PenBtn" class="tool-btn" title="Free Draw">
+            <i class="fa-solid fa-pen"></i>
+          </button>
+        </div>
+        <div class="tool-divider"></div>
+        <div class="tool-group-vertical">
+          <button id="TriangleBtn" class="tool-btn" title="Triangle Mark">
+            <i class="fa-solid fa-draw-polygon"></i>
+          </button>
+          <button id="CircleBtn" class="tool-btn" title="Circle Mark">
+            <i class="fa-regular fa-circle"></i>
+          </button>
+          <button id="SquareBtn" class="tool-btn" title="Square Mark">
+            <i class="fa-regular fa-square"></i>
+          </button>
+          <button id="LetterBtn" class="tool-btn" title="Place Letter">
+            <i class="fa-solid fa-font"></i>
+          </button>
+        </div>
+        <div class="tool-divider"></div>
+        <div class="tool-group-vertical">
+          <button id="GridBtn" class="tool-btn" title="Toggle Grid">
+            <i class="fa-solid fa-border-all"></i>
+          </button>
+          <button id="CoordBtn" class="tool-btn" title="Toggle Coordinates">
+            <i class="fa-solid fa-hashtag"></i>
+          </button>
+        </div>
+        <div class="tool-divider"></div>
+        <div class="tool-group-vertical">
+          <input
+            type="color"
+            id="markupColor"
+            value="#ff0000"
+            title="Markup/Letter Color"
+            class="tool-color"
+          >
+          <input
+            type="color"
+            id="coordinateColor"
+            value="#000000"
+            title="Coordinate Color"
+            class="tool-color"
+          >
+        </div>
+      </aside>
 
       <div class="content-area">
         <div class="feed-container">
@@ -234,19 +250,56 @@
         <p>This website was designed and developed by TangJieHao.</p>
       </div>
 
+      <div id="helpModal" class="help-modal hidden" role="dialog" aria-modal="true">
+        <div class="help-modal-content">
+          <div class="help-modal-header">
+            <h3>Commentary Help</h3>
+            <button id="helpClose" type="button">Close</button>
+          </div>
+          <div class="help-modal-body">
+            <div class="help-section">
+              <h4>Shortcuts</h4>
+              <p>S = Grid | R = Reset | Del = Clear All | Space = Clear Own Data | Q = Switch Color | Left/Right or Scroll = Undo/Redo Stones</p>
+            </div>
+            <div class="help-section">
+              <h4>Board Controls</h4>
+              <p>Right click places/removes empty-board stones.</p>
+            </div>
+            <div class="help-section">
+              <h4>Tips</h4>
+              <p>Use the vertical toolbar to switch tools quickly while staying on the board.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="nameModal" class="name-modal hidden" role="dialog" aria-modal="true">
+        <div class="name-modal-content">
+          <h3>Enter your commentator name</h3>
+          <p class="name-modal-hint">Use a single string with no spaces.</p>
+          <input
+            type="text"
+            id="nameInput"
+            placeholder="EnterNameNoSpaces"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          >
+          <div id="nameError" class="name-error" role="alert"></div>
+          <div class="name-modal-actions">
+            <button id="nameConfirm" type="button">Continue</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Load modules in dependency order -->
       <script type="module" src="./js/constants.js"></script>
       <script type="module" src="./js/utils/debugger.js"></script>
-      <script type="module" src="./js/utils/dom-elements.js"></script>
       <script type="module" src="./js/canvas/drawing-layer.js"></script>
       <script type="module" src="./js/canvas/canvas.js"></script>
       <script type="module" src="./js/managers/iframe-manager.js"></script>
-      <script type="module" src="./js/media/video.js"></script>
-      <script type="module" src="./js/managers/config-manager.js"></script>
       <script type="module" src="./js/managers/ui-manager.js"></script>
       <script type="module" src="./js/obs/obs-controller.js"></script>
-      <script type="module" src="./js/viewer/viewer-controller.js"></script>
-      <script type="module" src="./js/viewer/commentator-sender.js"></script>
       <script type="module" src="./js/main.js"></script>
     </div>
   </body>

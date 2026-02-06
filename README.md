@@ -79,36 +79,27 @@ A modern, web-based board review and broadcast overlay tool with integrated vide
 ## URL Parameters
 
 ### Basic Parameters
-- `vdo`: Main board video URL (double-encoded)
-- `chat_url`: Chat embed URL
-- `obs`: OBS camera URL (double-encoded)
+- `OTB`: Main board video URL (double-encoded). Required for viewers.
+- `Chat`: Chat embed URL
+- `obs`: OBS controller VDO Ninja URL (double-encoded)
+- `Network`: VDO Ninja room name
 - `stone`: Stone size value
+- `role`: `CO` (commentator) or `VW` (viewer)
 
-### OBS WebSocket Parameters
-- `obs_ws`: OBS WebSocket connection string
-- Format: `wss://host:port/?scenes=["Scene1","Scene2"]&pass=password`
-- `scenes`: JSON array of allowed scene names
-- **Scene Filtering**: If `scenes` parameter is missing or empty `[]`, all available scenes will be shown
-- `pass`: OBS WebSocket password
+### OBS Remote Control (via VDO Ninja)
+- **How it works**: The OBS control panel is an embedded VDO Ninja iframe that relays OBS WebSocket controls through VDO Ninja. No direct browser-to-OBS WebSocket connection is required.
+- **Scenes**: Use VDO Ninja’s built-in OBS control UI to expose scenes and stream controls.
 
 ### Grid Parameters
 - `grid`: Grid corner coordinates (semicolon-separated)
+### Coordinate Color
+- `CC`: Coordinate label color (hex)
 
 ## Usage Examples
 
-### Local OBS Setup
-```
-obs_ws=ws://localhost:4455/?scenes=["Break","Game"]&pass=yourpassword
-```
-
-### Remote OBS Setup (via ngrok)
-```
-obs_ws=wss://your-forwarding-url/?scenes=["Break","Game"]&pass=yourpassword
-```
-
 ### Complete Setup URL
 ```
-https://yoursite.com/?vdo=your-video-url&chat_url=your-chat-url&obs_ws=your-obs-websocket-url&stone=125
+https://yoursite.com/?OTB=your-video-url&Chat=your-chat-url&obs=your-vdo-ninja-obs-url&Network=your-room&stone=125&role=CO
 ```
 
 ## Technical Notes

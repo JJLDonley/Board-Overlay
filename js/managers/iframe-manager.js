@@ -16,23 +16,16 @@ export class IframeManager {
 
     parseUrlParams() {
         const params = new URLSearchParams(window.location.search);
-        // Handle VDO.Ninja view link
-        if (params.has('vdo_link')) {
-            const vdoLink = params.get('vdo_link');
-            if (vdoLink) {
-                const processedUrl = this.ensureFeedAudioSettings(vdoLink);
-                this.setUrl('feed', processedUrl);
-                document.title = vdoLink;
-            }
-        }
+        const role = params.get("role");
+        const isViewer = role === "VW";
         // Handle chat URL
-        if (params.has('chat_url')) {
-            const chatUrl = decodeURIComponent(params.get('chat_url'));
+        if (params.has('Chat') && !isViewer) {
+            const chatUrl = decodeURIComponent(params.get('Chat'));
             document.getElementById('ChatUrl').value = chatUrl;
             this.setUrl('chat', chatUrl);
         }
         // Handle VDO Ninja link
-        const vdoLink = params.get('vdo');
+        const vdoLink = params.get('OTB');
         if (vdoLink) {
             let decodedVdoLink = decodeURIComponent(vdoLink);
             // If still contains % signs, decode again
@@ -43,6 +36,17 @@ export class IframeManager {
             // Use ensureFeedAudioSettings to handle noaudio parameter
             const processedUrl = this.ensureFeedAudioSettings(decodedVdoLink);
             document.getElementById('feed').src = processedUrl;
+        }
+        // Handle OBS VDO Ninja link
+        const obsLink = params.get('obs');
+        if (obsLink && !isViewer) {
+            let decodedObsLink = decodeURIComponent(obsLink);
+            if (decodedObsLink.includes('%')) {
+                decodedObsLink = decodeURIComponent(decodedObsLink);
+            }
+            const obsInput = document.getElementById('ObsVdoUrl');
+            if (obsInput) obsInput.value = decodedObsLink;
+            this.setUrl('obs', decodedObsLink);
         }
     }
 
@@ -85,32 +89,29 @@ export class IframeManager {
     generateShareableUrl() {
         const params = new URLSearchParams();
         const vdoLink = document.getElementById('VideoURL').value;
-        if (vdoLink) params.append('vdo_link', encodeURIComponent(vdoLink));
+        if (vdoLink) {
+            params.set('OTB', encodeURIComponent(encodeURIComponent(vdoLink)));
+        }
         const chatUrl = document.getElementById('ChatUrl').value;
-        if (chatUrl) params.append('chat_url', encodeURIComponent(chatUrl));
-        // ... add other params as needed ...
+        if (chatUrl) params.set('Chat', encodeURIComponent(chatUrl));
+        const obsLink = document.getElementById('ObsVdoUrl')?.value;
+        if (obsLink) {
+            params.set('obs', encodeURIComponent(encodeURIComponent(obsLink)));
+        }
+        const networkRoom = document.getElementById('NetworkRoom')?.value;
+        if (networkRoom) {
+            params.set('Network', encodeURIComponent(networkRoom));
+        }
+        const coordColor = document.getElementById('coordinateColor')?.value;
+        if (coordColor) {
+            params.set('CC', coordColor);
+        }
+        const stoneSize = document.getElementById('StoneSize')?.value;
+        if (stoneSize) {
+            params.set('stone', stoneSize);
+        }
         if (window.overlay && window.overlay.points && window.overlay.points.length === 4) {
             params.set('grid', window.overlay.points.map(pt => pt.map(Number).map(n => Math.round(n)).join(',')).join(';'));
-        }
-        // Add obs_ws param last
-        const obsWebSocket = document.getElementById('ObsWebSocket')?.value;
-        if (obsWebSocket) {
-            // Use the original WebSocket URL without modification
-            let formattedUrl = obsWebSocket;
-            
-            // Only add scenes parameter if we're in restricted control mode
-            if (window.obsController && window.obsController.allowedScenes && window.obsController.allowedScenes.length > 0) {
-                // Add scenes parameter for restricted control
-                debug.log('Adding scenes parameter to shareable URL (restricted control):', window.obsController.allowedScenes);
-                formattedUrl += `&scenes=${encodeURIComponent(JSON.stringify(window.obsController.allowedScenes))}`;
-            } else {
-                debug.log('No scenes parameter added to shareable URL (full control mode)');
-            }
-            
-            // Note: We don't include the password in the shareable URL for security
-            // The password should be entered manually by the user
-            
-            params.set('obs_ws', encodeURIComponent(encodeURIComponent(formattedUrl)));
         }
         return `${window.location.origin}${window.location.pathname}?${params.toString()}`;
     }

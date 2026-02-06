@@ -1,4 +1,5 @@
 import { CONST, GRIDSIZE, STONES } from "../constants.js";
+import { getHostColor } from "../utils/color-utils.js";
 import { debug } from "../utils/debugger.js";
 
 export let currentTool = "ALTERNATING";
@@ -15,29 +16,16 @@ export class Canvas {
         this.show = true;
         this.showCoordinates = true;
         this.initializeCanvas();
-        this.stones = []; // For black and white stones (variations)
-        this.boardStones = []; // For board stones (empty positions)
+        this.stonesByOwner = new Map(); // For black and white stones (variations)
+        this.boardStonesByOwner = new Map(); // For board stones (empty positions)
         this.grid = [];
         this.points = [];
         this.isGridSet = false;
-        this.currentColor = "BLACK";
-        this.LetterToolList = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        this.LetterToolListIndex = 0;
-
-        // Initialize letter stack from A to ZZ in alphabetical order
-        this.letterStack = [];
-        // Single letters A-Z
-        for (let i = 65; i <= 90; i++) {
-            this.letterStack.push(String.fromCharCode(i));
-        }
-        // Double letters AA-ZZ
-        for (let i = 65; i <= 90; i++) {
-            for (let j = 65; j <= 90; j++) {
-                this.letterStack.push(
-                    String.fromCharCode(i) + String.fromCharCode(j),
-                );
-            }
-        }
+        this.currentColorByOwner = new Map();
+        this.letterStacksByOwner = new Map();
+        this.stoneHistoryByOwner = new Map();
+        this.redoHistoryByOwner = new Map();
+        this.markerStyle = "numbers";
 
         // All stones should be 100x100
         this.stoneSizes = {
@@ -106,18 +94,189 @@ export class Canvas {
                 });
             }
         });
+
+        const markerToggle = document.getElementById("stoneMarkerToggle");
+        if (markerToggle) {
+            markerToggle.checked = this.markerStyle === "triangle";
+            markerToggle.addEventListener("change", () => {
+                const style = markerToggle.checked ? "triangle" : "numbers";
+                this.setMarkerStyle(style, true);
+            });
+        }
     }
 
-    switchCurrentColor() {
-        this.currentColor = this.currentColor === "BLACK" ? "WHITE" : "BLACK";
-        debug.log("🎨 Switched current color to:", this.currentColor);
+    setMarkerStyle(style, emitNetwork = true) {
+        if (style !== "numbers" && style !== "triangle") return;
+        this.markerStyle = style;
+        if (emitNetwork && window.networkManager && !window.isViewerMode) {
+            window.networkManager.send({
+                action: "stone-marker-style",
+                style: style,
+            });
+        }
+    }
 
-        // Send to viewer if network manager is available
-        if (window.networkManager && !window.isViewerMode) {
+    getOwnerHistory(ownerId) {
+        if (!this.stoneHistoryByOwner.has(ownerId)) {
+            this.stoneHistoryByOwner.set(ownerId, []);
+        }
+        return this.stoneHistoryByOwner.get(ownerId);
+    }
+
+    getOwnerRedoHistory(ownerId) {
+        if (!this.redoHistoryByOwner.has(ownerId)) {
+            this.redoHistoryByOwner.set(ownerId, []);
+        }
+        return this.redoHistoryByOwner.get(ownerId);
+    }
+
+    recordStonePlacement(ownerId, x, y, color, markerColor) {
+        const history = this.getOwnerHistory(ownerId);
+        history.push({ x: x, y: y, color: color, markerColor: markerColor });
+    }
+
+    undoLastStone(ownerId = null, emitNetwork = true) {
+        const targetOwner = ownerId || this.getLocalOwnerId();
+        const history = this.getOwnerHistory(targetOwner);
+        const redoHistory = this.getOwnerRedoHistory(targetOwner);
+        if (history.length === 0) return;
+
+        while (history.length > 0) {
+            const last = history.pop();
+            const stones = this.getOwnerStones(targetOwner);
+            const index = stones.findIndex(
+                (stone) => stone.x === last.x && stone.y === last.y,
+            );
+            if (index >= 0) {
+                stones.splice(index, 1);
+                redoHistory.push(last);
+                break;
+            }
+        }
+
+        if (emitNetwork && window.networkManager && !window.isViewerMode) {
+            window.networkManager.send({
+                action: "undo-stone",
+                ownerId: targetOwner,
+            });
+        }
+    }
+
+    redoStone(ownerId = null, emitNetwork = true) {
+        const targetOwner = ownerId || this.getLocalOwnerId();
+        const redoHistory = this.getOwnerRedoHistory(targetOwner);
+        if (redoHistory.length === 0) return;
+        const next = redoHistory.pop();
+        this.placeStone(next.x, next.y, next.color, targetOwner, {
+            recordHistory: true,
+            clearRedo: false,
+            markerColor: next.markerColor,
+        });
+
+        if (emitNetwork && window.networkManager && !window.isViewerMode) {
+            window.networkManager.send({
+                action: "redo-stone",
+                ownerId: targetOwner,
+            });
+        }
+    }
+
+    buildLetterStack() {
+        const stack = [];
+        for (let i = 65; i <= 90; i++) {
+            stack.push(String.fromCharCode(i));
+        }
+        for (let i = 65; i <= 90; i++) {
+            for (let j = 65; j <= 90; j++) {
+                stack.push(String.fromCharCode(i) + String.fromCharCode(j));
+            }
+        }
+        return stack;
+    }
+
+    getLocalOwnerId() {
+        return window.localOwnerId || window.cursorLabel || "local";
+    }
+
+    getOwnerStones(ownerId) {
+        if (!this.stonesByOwner.has(ownerId)) {
+            this.stonesByOwner.set(ownerId, []);
+        }
+        return this.stonesByOwner.get(ownerId);
+    }
+
+    getOwnerBoardStones(ownerId) {
+        if (!this.boardStonesByOwner.has(ownerId)) {
+            this.boardStonesByOwner.set(ownerId, []);
+        }
+        return this.boardStonesByOwner.get(ownerId);
+    }
+
+    getOwnerColor(ownerId) {
+        if (!this.currentColorByOwner.has(ownerId)) {
+            this.currentColorByOwner.set(ownerId, "BLACK");
+        }
+        return this.currentColorByOwner.get(ownerId);
+    }
+
+    setOwnerColor(ownerId, color) {
+        this.currentColorByOwner.set(ownerId, color);
+    }
+
+    getLetterStack(ownerId) {
+        if (!this.letterStacksByOwner.has(ownerId)) {
+            this.letterStacksByOwner.set(ownerId, this.buildLetterStack());
+        }
+        return this.letterStacksByOwner.get(ownerId);
+    }
+
+    resetLetterStack(ownerId, updateButton = false) {
+        if (!ownerId) return;
+        this.letterStacksByOwner.set(ownerId, this.buildLetterStack());
+        if (updateButton && ownerId === this.getLocalOwnerId()) {
+            const letterBtn = document.getElementById("LetterBtn");
+            if (letterBtn) {
+                const stack = this.getLetterStack(ownerId);
+                letterBtn.textContent = stack.length > 0 ? stack[0] : "A";
+            }
+        }
+    }
+
+    resetAllLetterStacks() {
+        this.letterStacksByOwner.clear();
+        this.resetLetterStack(this.getLocalOwnerId(), true);
+    }
+
+    clearOwnerData(ownerId) {
+        if (!ownerId) return;
+        this.stonesByOwner.delete(ownerId);
+        this.boardStonesByOwner.delete(ownerId);
+        this.stoneHistoryByOwner.delete(ownerId);
+        this.redoHistoryByOwner.delete(ownerId);
+        this.resetLetterStack(ownerId, true);
+        this.clearCanvas();
+    }
+
+    getStonesForOwner(ownerId) {
+        return this.stonesByOwner.get(ownerId) || [];
+    }
+
+    getBoardStonesForOwner(ownerId) {
+        return this.boardStonesByOwner.get(ownerId) || [];
+    }
+    switchCurrentColor(ownerId = null, emitNetwork = true) {
+        const targetOwner = ownerId || this.getLocalOwnerId();
+        const nextColor = this.getOwnerColor(targetOwner) === "BLACK"
+            ? "WHITE"
+            : "BLACK";
+        this.setOwnerColor(targetOwner, nextColor);
+        debug.log("Switched current color to:", nextColor);
+
+        if (emitNetwork && window.networkManager && !window.isViewerMode) {
             window.networkManager.send({
                 action: "switch-color",
-                color: this.currentColor,
-                timestamp: Date.now(),
+                color: nextColor,
+                ownerId: targetOwner,
             });
         }
     }
@@ -273,11 +432,17 @@ export class Canvas {
         this.clearCanvas();
         this.drawGrid();
         // Draw board stones first (as background)
-        this.boardStones.forEach((stone) => this.drawCircle(stone));
-        // Then draw variation stones and their markers
-        this.stones.forEach((stone, index) => {
-            this.drawCircle(stone);
-            this.drawMarker(stone, index);
+        this.boardStonesByOwner.forEach((stones) => {
+            stones.forEach((stone) => {
+                this.drawCircle([stone.x, stone.y, stone.color]);
+            });
+        });
+        // Then draw variation stones and their markers per owner
+        this.stonesByOwner.forEach((stones) => {
+            stones.forEach((stone, index) => {
+                this.drawCircle([stone.x, stone.y, stone.color]);
+                this.drawMarker(stone, index);
+            });
         });
 
         // Draw hover stone if applicable
@@ -298,6 +463,8 @@ export class Canvas {
         const stoneTools = ["BLACK", "WHITE", "ALTERNATING"];
         if (!stoneTools.includes(currentTool)) return;
 
+        const ownerId = this.getLocalOwnerId();
+
         // Determine color to show
         let hoverColor;
         if (currentTool === "BLACK") {
@@ -306,7 +473,7 @@ export class Canvas {
             hoverColor = STONES.WHITE;
         } else {
             // Alternating
-            hoverColor = this.currentColor === "BLACK"
+            hoverColor = this.getOwnerColor(ownerId) === "BLACK"
                 ? STONES.BLACK
                 : STONES.WHITE;
         }
@@ -320,8 +487,9 @@ export class Canvas {
 
         // Check if point is already occupied by a variation stone
         // (We allow hovering over board stones as they can be covered)
-        const isOccupied = this.stones.some(([x, y]) =>
-            x === point[0] && y === point[1]
+        const ownerStones = this.getOwnerStones(ownerId);
+        const isOccupied = ownerStones.some((stone) =>
+            stone.x === point[0] && stone.y === point[1]
         );
 
         if (!isOccupied) {
@@ -386,7 +554,7 @@ export class Canvas {
 
                 // Get coordinate color from coordinate color picker, fallback to white
                 const colorInput = document.getElementById("coordinateColor");
-                const coordinateColor = colorInput ? colorInput.value : "white";
+                const coordinateColor = colorInput ? colorInput.value : "black";
                 this.context.fillStyle = coordinateColor;
 
                 this.context.textAlign = "center";
@@ -454,11 +622,19 @@ export class Canvas {
     }
 
     drawStones() {
-        this.stones.forEach((stone) => this.drawCircle(stone));
+        this.stonesByOwner.forEach((stones) => {
+            stones.forEach((stone) => {
+                this.drawCircle([stone.x, stone.y, stone.color]);
+            });
+        });
     }
 
     markLastStone() {
-        this.stones.forEach((stone, index) => this.drawMarker(stone, index));
+        this.stonesByOwner.forEach((stones) => {
+            stones.forEach((stone, index) => {
+                this.drawMarker(stone, index);
+            });
+        });
     }
 
     drawCircle([mouse_x, mouse_y, stone_color]) {
@@ -499,7 +675,10 @@ export class Canvas {
         );
     }
 
-    drawMarker([mouse_x, mouse_y, stone_color], index) {
+    drawMarker(stone, index) {
+        const mouse_x = stone.x;
+        const mouse_y = stone.y;
+        const stone_color = stone.color;
         if (!this.isGridSet || !this.grid.length) {
             return;
         }
@@ -517,6 +696,13 @@ export class Canvas {
         ];
         const stoneSize = this.interpolateStoneSize(mouse_x, mouse_y, baseSize);
 
+        const hostColor = stone.markerColor ||
+            (stone_color === STONES.BLACK ? "white" : "black");
+        if (this.markerStyle === "triangle") {
+            this.drawTriangleMarker(scaledX, scaledY, stoneSize, hostColor);
+            return;
+        }
+
         this.context.fillStyle = (stone_color === STONES.BLACK)
             ? "white"
             : "black";
@@ -528,6 +714,24 @@ export class Canvas {
         this.context.textBaseline = "middle";
 
         this.context.fillText(index + 1, scaledX, scaledY);
+    }
+
+    drawTriangleMarker(x, y, stoneSize, color) {
+        const size = (stoneSize / 2.2) * this.getScalingFactor();
+        const height = size;
+        const halfBase = size * 0.6;
+
+        this.context.save();
+        this.context.fillStyle = color;
+        this.context.strokeStyle = color;
+        this.context.lineWidth = Math.max(1.2, 1.6 * this.getScalingFactor());
+        this.context.beginPath();
+        this.context.moveTo(x, y - height / 1.2);
+        this.context.lineTo(x - halfBase, y + height / 2.2);
+        this.context.lineTo(x + halfBase, y + height / 2.2);
+        this.context.closePath();
+        this.context.fill();
+        this.context.restore();
     }
 
     interpolateStoneSize(x, y, baseSize) {
@@ -587,6 +791,9 @@ export class Canvas {
 
     handleMouseDown(event) {
         event.preventDefault();
+        if (window.isViewerMode) {
+            return;
+        }
         let rect = this.canvas.getBoundingClientRect();
         let x = event.clientX - rect.left;
         let y = event.clientY - rect.top;
@@ -616,6 +823,7 @@ export class Canvas {
                 }
             }
         } else if (this.isGridSet) {
+            const ownerId = this.getLocalOwnerId();
             let point = this.findClosestPoint(cx, cy, this.grid);
 
             // Handle shape/letter tools
@@ -626,10 +834,12 @@ export class Canvas {
                 if (currentTool === "LETTER") {
                     const letterBtn = document.getElementById("LetterBtn");
                     if (letterBtn) {
+                        const letterStack = this.getLetterStack(ownerId);
                         // Check if there's already a letter at this position
                         const existingLetter = window.drawingLayer.marks.find(
                             (mark) =>
                                 mark.type === "LETTER" &&
+                                mark.ownerId === ownerId &&
                                 Math.sqrt(
                                         (mark.x - point[0]) ** 2 +
                                             (mark.y - point[1]) ** 2,
@@ -649,28 +859,28 @@ export class Canvas {
                             let insertIndex = 0;
 
                             // Find the correct position to maintain alphabetical order
-                            for (let i = 0; i < this.letterStack.length; i++) {
-                                if (this.letterStack[i] > removedLetter) {
+                            for (let i = 0; i < letterStack.length; i++) {
+                                if (letterStack[i] > removedLetter) {
                                     insertIndex = i;
                                     break;
                                 }
                                 insertIndex = i + 1;
                             }
 
-                            this.letterStack.splice(
+                            letterStack.splice(
                                 insertIndex,
                                 0,
                                 removedLetter,
                             );
-                            letterBtn.textContent = this.letterStack[0];
+                            letterBtn.textContent = letterStack[0];
                             return;
                         } else {
                             // Get the next letter from the stack
-                            if (this.letterStack.length > 0) {
-                                text = this.letterStack.shift(); // Remove and get the first letter
+                            if (letterStack.length > 0) {
+                                text = letterStack.shift();
                                 letterBtn.textContent =
-                                    this.letterStack.length > 0
-                                        ? this.letterStack[0]
+                                    letterStack.length > 0
+                                        ? letterStack[0]
                                         : "A";
                             } else {
                                 text = "A"; // Fallback if stack is empty
@@ -686,6 +896,8 @@ export class Canvas {
                     point[0],
                     point[1],
                     text,
+                    ownerId,
+                    window.currentUserColor,
                 );
 
                 // Send to viewer if network manager is available
@@ -696,6 +908,8 @@ export class Canvas {
                         x: point[0],
                         y: point[1],
                         text: text,
+                        color: window.currentUserColor,
+                        ownerId: ownerId,
                         timestamp: Date.now(),
                     });
                 }
@@ -708,11 +922,13 @@ export class Canvas {
                 event.button === 0
             ) {
                 // Check if there's a board stone at this position and remove it
-                let existingBoardStoneIndex = this.boardStones.findIndex((
-                    [x, y],
-                ) => x === point[0] && y === point[1]);
+                const ownerBoardStones = this.getOwnerBoardStones(ownerId);
+                let existingBoardStoneIndex = ownerBoardStones.findIndex(
+                    (stone) =>
+                        stone.x === point[0] && stone.y === point[1],
+                );
                 if (existingBoardStoneIndex >= 0) {
-                    this.boardStones.splice(existingBoardStoneIndex, 1);
+                    ownerBoardStones.splice(existingBoardStoneIndex, 1);
                     // Send remove board command
                     if (window.networkManager && !window.isViewerMode) {
                         window.networkManager.send({
@@ -720,24 +936,26 @@ export class Canvas {
                             x: point[0],
                             y: point[1],
                             color: "REMOVE_BOARD",
+                            ownerId: ownerId,
                         });
                     }
                 }
 
                 // Check if there's already a stone at this position
-                let existingStoneIndex = this.stones.findIndex(([x, y]) =>
-                    x === point[0] && y === point[1]
+                const ownerStones = this.getOwnerStones(ownerId);
+                let existingStoneIndex = ownerStones.findIndex((stone) =>
+                    stone.x === point[0] && stone.y === point[1]
                 );
 
                 if (existingStoneIndex >= 0) {
                     // Stone exists - check if same color or different
-                    let existingStone = this.stones[existingStoneIndex];
-                    let existingColor = existingStone[2];
+                    let existingStone = ownerStones[existingStoneIndex];
+                    let existingColor = existingStone.color;
 
                     // Determine what color we're trying to place
                     let colorToPlace;
                     if (currentTool === "ALTERNATING") {
-                        colorToPlace = this.currentColor === "BLACK"
+                        colorToPlace = this.getOwnerColor(ownerId) === "BLACK"
                             ? STONES.BLACK
                             : STONES.WHITE;
                     } else {
@@ -748,7 +966,7 @@ export class Canvas {
 
                     if (existingColor === colorToPlace) {
                         // Same color - remove the stone
-                        this.stones.splice(existingStoneIndex, 1);
+                        ownerStones.splice(existingStoneIndex, 1);
 
                         // Send remove command
                         if (window.networkManager && !window.isViewerMode) {
@@ -756,6 +974,7 @@ export class Canvas {
                                 action: "remove-stone",
                                 x: point[0],
                                 y: point[1],
+                                ownerId: ownerId,
                             });
 
                             // Also send grid
@@ -768,23 +987,38 @@ export class Canvas {
                         }
                     } else {
                         // Different color - replace the stone
-                        this.stones[existingStoneIndex] = [
+                        this.placeStone(
                             point[0],
                             point[1],
-                            colorToPlace,
-                        ];
+                            currentTool === "BLACK" ||
+                                    (currentTool === "ALTERNATING" &&
+                                        this.getOwnerColor(ownerId) ===
+                                            "BLACK")
+                                ? "BLACK"
+                                : "WHITE",
+                            ownerId,
+                        );
 
                         // Send place command (will overwrite)
                         if (window.networkManager && !window.isViewerMode) {
+                            const markerColor = window.currentUserColor ||
+                                getHostColor(
+                                    window.hostTag ||
+                                        window.cursorLabel ||
+                                        ownerId,
+                                );
                             window.networkManager.send({
                                 action: "place-stone",
                                 x: point[0],
                                 y: point[1],
                                 color: currentTool === "BLACK" ||
                                         (currentTool === "ALTERNATING" &&
-                                            this.currentColor === "BLACK")
+                                            this.getOwnerColor(ownerId) ===
+                                                "BLACK")
                                     ? "BLACK"
                                     : "WHITE",
+                                ownerId: ownerId,
+                                markerColor: markerColor,
                             });
 
                             // Also send grid
@@ -798,14 +1032,14 @@ export class Canvas {
 
                         // Switch color if ALTERNATING
                         if (currentTool === "ALTERNATING") {
-                            this.switchCurrentColor();
+                            this.switchCurrentColor(ownerId);
                         }
                     }
                 } else {
                     // No stone exists - place new stone
                     let colorToPlace;
                     if (currentTool === "ALTERNATING") {
-                        colorToPlace = this.currentColor === "BLACK"
+                        colorToPlace = this.getOwnerColor(ownerId) === "BLACK"
                             ? STONES.BLACK
                             : STONES.WHITE;
                     } else {
@@ -814,19 +1048,36 @@ export class Canvas {
                             : STONES.WHITE;
                     }
 
-                    this.stones.push([point[0], point[1], colorToPlace]);
+                    this.placeStone(
+                        point[0],
+                        point[1],
+                        currentTool === "BLACK" ||
+                                (currentTool === "ALTERNATING" &&
+                                    this.getOwnerColor(ownerId) ===
+                                        "BLACK")
+                            ? "BLACK"
+                            : "WHITE",
+                        ownerId,
+                    );
 
                     // Send place command
                     if (window.networkManager && !window.isViewerMode) {
+                        const markerColor = window.currentUserColor ||
+                            getHostColor(
+                                window.hostTag || window.cursorLabel || ownerId,
+                            );
                         window.networkManager.send({
                             action: "place-stone",
                             x: point[0],
                             y: point[1],
                             color: currentTool === "BLACK" ||
                                     (currentTool === "ALTERNATING" &&
-                                        this.currentColor === "BLACK")
+                                        this.getOwnerColor(ownerId) ===
+                                            "BLACK")
                                 ? "BLACK"
                                 : "WHITE",
+                            ownerId: ownerId,
+                            markerColor: markerColor,
                         });
 
                         // Also send grid
@@ -840,18 +1091,21 @@ export class Canvas {
 
                     // Switch color if ALTERNATING
                     if (currentTool === "ALTERNATING") {
-                        this.switchCurrentColor();
+                        this.switchCurrentColor(ownerId);
                     }
                 }
                 return;
             }
 
             if (event.button === 2) { // Right click - handle board stones
-                let existingBoardStoneIndex = this.boardStones.findIndex((
-                    [x, y],
-                ) => x === point[0] && y === point[1]);
+                const ownerBoardStones = this.getOwnerBoardStones(ownerId);
+                const ownerStones = this.getOwnerStones(ownerId);
+                let existingBoardStoneIndex = ownerBoardStones.findIndex(
+                    (stone) =>
+                        stone.x === point[0] && stone.y === point[1],
+                );
                 if (existingBoardStoneIndex >= 0) {
-                    this.boardStones.splice(existingBoardStoneIndex, 1);
+                    ownerBoardStones.splice(existingBoardStoneIndex, 1);
                     // Send board stone removal to viewer
                     if (window.networkManager && !window.isViewerMode) {
                         window.networkManager.send({
@@ -859,17 +1113,23 @@ export class Canvas {
                             x: point[0],
                             y: point[1],
                             color: "REMOVE_BOARD",
+                            ownerId: ownerId,
                         });
                     }
                 } else {
                     // Remove any variation stone at this position
-                    let existingStoneIndex = this.stones.findIndex(([x, y]) =>
-                        x === point[0] && y === point[1]
+                    let existingStoneIndex = ownerStones.findIndex((stone) =>
+                        stone.x === point[0] && stone.y === point[1]
                     );
                     if (existingStoneIndex >= 0) {
-                        this.stones.splice(existingStoneIndex, 1);
+                        ownerStones.splice(existingStoneIndex, 1);
                     }
-                    this.boardStones.push([point[0], point[1], STONES.BOARD]);
+                    ownerBoardStones.push({
+                        x: point[0],
+                        y: point[1],
+                        color: STONES.BOARD,
+                        ownerId: ownerId,
+                    });
 
                     // Send board stone placement to viewer
                     if (window.networkManager && !window.isViewerMode) {
@@ -878,6 +1138,7 @@ export class Canvas {
                             x: point[0],
                             y: point[1],
                             color: "BOARD",
+                            ownerId: ownerId,
                         });
 
                         // Also send current grid coordinates with board stone placement
@@ -935,6 +1196,9 @@ export class Canvas {
                             x: this.currentMouseX,
                             y: this.currentMouseY,
                             label: window.cursorLabel,
+                            ownerId: this.getLocalOwnerId(),
+                            color: window.currentUserColor,
+                            hostTag: window.hostTag || null,
                             timestamp: Date.now(),
                         });
                         this.lastSentX = this.currentMouseX;
@@ -980,6 +1244,9 @@ export class Canvas {
                             x: this.currentMouseX,
                             y: this.currentMouseY,
                             label: window.cursorLabel,
+                            ownerId: this.getLocalOwnerId(),
+                            color: window.currentUserColor,
+                            hostTag: window.hostTag || null,
                             timestamp: Date.now(),
                         });
                         this.lastSentX = this.currentMouseX;
@@ -992,57 +1259,50 @@ export class Canvas {
 
     handleKeyDown(event) {
         // Note: Spacebar handling is now done in main.js to avoid duplicate events
+        if (window.isViewerMode) {
+            return;
+        }
         if (event.code === "KeyR") {
             this.resetGrid();
             event.preventDefault();
         } else if (event.code === "KeyQ") {
-            this.switchCurrentColor();
+            this.switchCurrentColor(this.getLocalOwnerId());
             event.preventDefault();
         }
     }
 
     clearStones() {
-        this.stones = [];
-        this.boardStones = [];
+        this.stonesByOwner.clear();
+        this.boardStonesByOwner.clear();
+        this.stoneHistoryByOwner.clear();
+        this.redoHistoryByOwner.clear();
+        this.resetAllLetterStacks();
         this.clearCanvas();
-
-        // Reset letter stack
-        this.letterStack = [];
-        // Single letters A-Z
-        for (let i = 65; i <= 90; i++) {
-            this.letterStack.push(String.fromCharCode(i));
-        }
-        // Double letters AA-ZZ
-        for (let i = 65; i <= 90; i++) {
-            for (let j = 65; j <= 90; j++) {
-                this.letterStack.push(
-                    String.fromCharCode(i) + String.fromCharCode(j),
-                );
-            }
-        }
-
-        // Update letter button
-        const letterBtn = document.getElementById("LetterBtn");
-        if (letterBtn) {
-            letterBtn.textContent = this.letterStack[0];
-        }
 
         // Note: Viewer communication is now handled centrally in main.js
     }
 
     checkForOverlappingStones() {
-        // Checking for overlapping stones and removing overlaps
-        this.stones = this.stones.filter((stone, i) => {
-            for (let j = i + 1; j < this.stones.length; j++) {
-                if (this.isOverlapping(stone, this.stones[j])) {
-                    return false;
+        this.stonesByOwner.forEach((stones, ownerId) => {
+            const filtered = stones.filter((stone, i) => {
+                for (let j = i + 1; j < stones.length; j++) {
+                    if (this.isOverlapping(stone, stones[j])) {
+                        return false;
+                    }
                 }
-            }
-            return true;
+                return true;
+            });
+            this.stonesByOwner.set(ownerId, filtered);
         });
     }
 
-    isOverlapping([x1, y1], [x2, y2]) {
+    isOverlapping(stoneA, stoneB) {
+        const [x1, y1] = Array.isArray(stoneA)
+            ? stoneA
+            : [stoneA.x, stoneA.y];
+        const [x2, y2] = Array.isArray(stoneB)
+            ? stoneB
+            : [stoneB.x, stoneB.y];
         const distance = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
         return distance < this.stones_radius + 10; // Assuming radius as the criterion for overlap
     }
@@ -1156,8 +1416,9 @@ export class Canvas {
         this.isGridSet = false;
         this.grid = [];
         this.points = [];
-        this.stones = [];
-        this.boardStones = [];
+        this.stonesByOwner.clear();
+        this.boardStonesByOwner.clear();
+        this.resetAllLetterStacks();
         this.updateGridButtonState();
         if (window.updateShareableUrl) {
             window.updateShareableUrl();
@@ -1171,66 +1432,103 @@ export class Canvas {
         }
     }
 
-    placeStone(x, y, color) {
-        // Method for viewer to place stones programmatically
-        // Check if there's already a stone at this position
-        let existingStoneIndex = this.stones.findIndex(([stoneX, stoneY]) =>
-            stoneX === x && stoneY === y
+    placeStone(x, y, color, ownerId = null, options = {}) {
+        const targetOwner = ownerId || this.getLocalOwnerId();
+        const ownerStones = this.getOwnerStones(targetOwner);
+        const ownerBoardStones = this.getOwnerBoardStones(targetOwner);
+        const recordHistory = options.recordHistory !== false;
+        const clearRedo = options.clearRedo !== false;
+        const resolvedMarkerColor = options.markerColor ||
+            window.currentUserColor ||
+            getHostColor(window.hostTag || window.cursorLabel || targetOwner);
+
+        let existingStoneIndex = ownerStones.findIndex((stone) =>
+            stone.x === x && stone.y === y
         );
 
         if (existingStoneIndex >= 0) {
-            // If there's already a stone at this position, check if it's the same color
-            const existingStone = this.stones[existingStoneIndex];
-            if (existingStone[2] === STONES[color]) {
-                // Same stone, same color - do nothing
+            const existingStone = ownerStones[existingStoneIndex];
+            if (existingStone.color === STONES[color]) {
                 return;
-            } else {
-                // Different color - replace the stone
-                this.stones.splice(existingStoneIndex, 1);
             }
+            ownerStones.splice(existingStoneIndex, 1);
         } else {
-            // Remove any board stone at this position
-            let existingBoardStoneIndex = this.boardStones.findIndex((
-                [stoneX, stoneY],
-            ) => stoneX === x && stoneY === y);
+            let existingBoardStoneIndex = ownerBoardStones.findIndex((stone) =>
+                stone.x === x && stone.y === y
+            );
             if (existingBoardStoneIndex >= 0) {
-                this.boardStones.splice(existingBoardStoneIndex, 1);
+                ownerBoardStones.splice(existingBoardStoneIndex, 1);
             }
         }
 
-        // Add the new stone
-        this.stones.push([x, y, STONES[color]]);
+        ownerStones.push({
+            x: x,
+            y: y,
+            color: STONES[color],
+            ownerId: targetOwner,
+            markerColor: resolvedMarkerColor,
+        });
+
+        if (recordHistory && (color === "BLACK" || color === "WHITE")) {
+            this.recordStonePlacement(
+                targetOwner,
+                x,
+                y,
+                color,
+                resolvedMarkerColor,
+            );
+        }
+        if (clearRedo) {
+            const redoHistory = this.getOwnerRedoHistory(targetOwner);
+            redoHistory.length = 0;
+        }
     }
 
-    placeBoardStone(x, y, action) {
-        // Method for viewer to place/remove board stones programmatically
+    removeStone(x, y, ownerId = null) {
+        const targetOwner = ownerId || this.getLocalOwnerId();
+        const ownerStones = this.getOwnerStones(targetOwner);
+        const existingStoneIndex = ownerStones.findIndex((stone) =>
+            stone.x === x && stone.y === y
+        );
+        if (existingStoneIndex >= 0) {
+            ownerStones.splice(existingStoneIndex, 1);
+        }
+    }
+
+    placeBoardStone(x, y, action, ownerId = null) {
+        const targetOwner = ownerId || this.getLocalOwnerId();
+        const ownerBoardStones = this.getOwnerBoardStones(targetOwner);
+        const ownerStones = this.getOwnerStones(targetOwner);
+
         if (action === "REMOVE_BOARD") {
-            // Remove board stone at this position
-            let existingBoardStoneIndex = this.boardStones.findIndex((
-                [stoneX, stoneY],
-            ) => stoneX === x && stoneY === y);
+            let existingBoardStoneIndex = ownerBoardStones.findIndex((stone) =>
+                stone.x === x && stone.y === y
+            );
             if (existingBoardStoneIndex >= 0) {
-                this.boardStones.splice(existingBoardStoneIndex, 1);
+                ownerBoardStones.splice(existingBoardStoneIndex, 1);
             }
         } else if (action === "BOARD") {
-            // Remove any existing stone at this position first
-            let existingStoneIndex = this.stones.findIndex(([stoneX, stoneY]) =>
-                stoneX === x && stoneY === y
+            let existingStoneIndex = ownerStones.findIndex((stone) =>
+                stone.x === x && stone.y === y
             );
             if (existingStoneIndex >= 0) {
-                this.stones.splice(existingStoneIndex, 1);
+                ownerStones.splice(existingStoneIndex, 1);
             }
 
-            // Remove any existing board stone at this position
-            let existingBoardStoneIndex = this.boardStones.findIndex((
-                [stoneX, stoneY],
-            ) => stoneX === x && stoneY === y);
+            let existingBoardStoneIndex = ownerBoardStones.findIndex((stone) =>
+                stone.x === x && stone.y === y
+            );
             if (existingBoardStoneIndex >= 0) {
-                this.boardStones.splice(existingBoardStoneIndex, 1);
+                ownerBoardStones.splice(existingBoardStoneIndex, 1);
             }
 
-            // Add the board stone
-            this.boardStones.push([x, y, STONES.BOARD]);
+            ownerBoardStones.push({
+                x: x,
+                y: y,
+                color: STONES.BOARD,
+                ownerId: targetOwner,
+            });
         }
     }
 }
+
