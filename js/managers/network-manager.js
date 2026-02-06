@@ -1,6 +1,5 @@
 import { debug } from "../utils/debugger.js";
-import { CommentatorSender } from "../viewer/commentator-sender.js";
-import { ViewerController } from "../viewer/viewer-controller.js";
+import { PeerController } from "../viewer/peer-controller.js";
 
 export class NetworkManager {
     constructor() {
@@ -26,31 +25,15 @@ export class NetworkManager {
             `🌐 NetworkManager initializing as ${role} for room: ${roomName}`,
         );
 
-        if (role === "CO") {
-            this.controller = new CommentatorSender();
-            this.controller.enable(roomName);
-        } else if (role === "VW") {
-            // ViewerController handles its own connection in constructor currently,
-            // but we might want to standardize this. For now, we adapt.
-            // The current ViewerController reads URL params directly, which is not ideal for a manager.
-            // We will need to refactor ViewerController slightly or just instantiate it.
-            // For now, we assume ViewerController reads from URL as before,
-            // BUT we should probably pass the roomName to it to be cleaner.
-
-            // Refactor note: ViewerController constructor calls setupNetwork() which reads URL.
-            // We will modify ViewerController to accept roomName in constructor/setup.
-            this.controller = new ViewerController(roomName);
-        }
+        this.controller = new PeerController(roomName, {
+            isViewer: role === "VW",
+        });
     }
 
     disconnect() {
         if (this.controller) {
-            if (this.controller.disable) {
-                this.controller.disable();
-            } else if (this.controller.disconnect) {
+            if (this.controller.disconnect) {
                 this.controller.disconnect();
-            } else if (this.controller.network) {
-                this.controller.network.disconnect();
             }
             this.controller = null;
         }
@@ -90,6 +73,19 @@ export class NetworkManager {
             debug.warn(
                 "⚠️ Cannot send command: Not in CO role or no controller",
             );
+        }
+    }
+
+    getOwnerId() {
+        if (this.controller && this.controller.getOwnerId) {
+            return this.controller.getOwnerId();
+        }
+        return null;
+    }
+
+    setLabel(label, hostTag = null) {
+        if (this.controller && this.controller.setLabel) {
+            this.controller.setLabel(label, hostTag);
         }
     }
 }

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <script type="module">
+    // Create the container for the iframe
+var container = document.createElement("div");
+container.id = "vdo-container";
+document.body.appendChild(container);
+
+// Create the iframe element
+var iframe = document.createElement("iframe");
+iframe.allow = "camera;microphone;fullscreen;display-capture;autoplay;";
+iframe.src = "https://vdo.ninja/?room=your-room-name&cleanoutput&datamode&autojoin";
+iframe.style.width = "100%";
+iframe.style.height = "100%";
+container.appendChild(iframe);
+
+// Create a status display element
+var statusDiv = document.createElement("div");
+statusDiv.id = "connection-status";
+document.body.appendChild(statusDiv);
+
+// Set up event listener
+var eventMethod = window.addEventListener ? "addEventListener" : "attachEvent";
+var eventer = window[eventMethod];
+var messageEvent = eventMethod === "attachEvent" ? "onmessage" : "message";
+
+// Keep track of connected users
+var connectedUsers = {};
+
+// Add the event listener
+eventer(messageEvent, function (e) {
+    // Make sure the message is from our VDO.Ninja iframe
+    if (e.source != iframe.contentWindow) return;
+    
+    // Log all messages for debugging
+    console.log(e.data);
+    
+    // Process specific actions
+    if ("action" in e.data) {
+        handleAction(e.data);
+    }
+}, false);
+
+function handleAction(data) {
+    // Handle connections
+    if (data.action === "guest-connected" && data.streamID) {
+        connectedUsers[data.streamID] = data.value?.label || "Guest";
+        updateStatusDisplay("Guest connected: " + (data.value?.label || data.streamID));
+    }
+    else if (data.action === "view-connection") {
+        if (data.value && data.streamID) {
+            connectedUsers[data.streamID] = "Viewer";
+            updateStatusDisplay("Viewer connected: " + data.streamID);
+        } else if (data.streamID) {
+            delete connectedUsers[data.streamID];
+            updateStatusDisplay("Viewer disconnected: " + data.streamID);
+        }
+    }
+    else if (data.action === "director-connected") {
+        updateStatusDisplay("Director connected");
+    }
+    else if (data.action === "push-connection" && data.value === false && data.streamID) {
+        delete connectedUsers[data.streamID];
+        updateStatusDisplay("User disconnected: " + data.streamID);
+    }
+}
+
+function updateStatusDisplay(message) {
+    var timestamp = new Date().toLocaleTimeString();
+    statusDiv.innerHTML += `<p>${timestamp}: ${message}</p>`;
+    
+    // Update connected users count
+    var count = Object.keys(connectedUsers).length;
+    document.getElementById("user-count").textContent = count;
+}
+
+// Add a user count display
+var countDiv = document.createElement("div");
+countDiv.innerHTML = "Connected users: <span id='user-count'>0</span>";
+document.body.insertBefore(countDiv, statusDiv);
+</script>
+</body>
+</html>

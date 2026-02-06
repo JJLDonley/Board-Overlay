@@ -1,200 +1,247 @@
-import { debug } from '../utils/debugger.js';
+import { debug } from "../utils/debugger.js";
 
 export class UIManager {
     constructor(iframeManager) {
         this.iframeManager = iframeManager;
-        this.reviewPanel = document.getElementById('reviewPanel');
-        this.settingsPanel = document.getElementById('settingsPanel');
-        this.obsControlPanel = document.getElementById('obsControlPanel');
-        this.toggleReview = document.getElementById('toggleReview');
-        this.toggleSettings = document.getElementById('toggleSettings');
-        this.toggleObsControl = document.getElementById('toggleObsControl');
-        this.gridElement = document.getElementById('GridElement');
-        
+        this.toggleHelp = document.getElementById("toggleHelp");
+        this.helpModal = document.getElementById("helpModal");
+        this.helpClose = document.getElementById("helpClose");
+        this.toolbar = document.querySelector(".floating-toolbar");
+        this.toolbarHandle = document.querySelector(".toolbar-handle");
+
         this.bindEventListeners();
     }
 
     bindEventListeners() {
-        // Toggle panels
-        if (this.toggleReview) {
-            this.toggleReview.addEventListener('click', () => {
-                this.togglePanel('review');
+        if (this.toggleHelp) {
+            this.toggleHelp.addEventListener("click", () => {
+                this.openHelp();
             });
         }
 
-        if (this.toggleSettings) {
-            this.toggleSettings.addEventListener('click', () => {
-                this.togglePanel('settings');
+        if (this.helpClose) {
+            this.helpClose.addEventListener("click", () => {
+                this.closeHelp();
             });
         }
 
-        if (this.toggleObsControl) {
-            this.toggleObsControl.addEventListener('click', () => {
-                this.togglePanel('obsControl');
+        if (this.helpModal) {
+            this.helpModal.addEventListener("click", (event) => {
+                if (event.target === this.helpModal) {
+                    this.closeHelp();
+                }
             });
         }
 
-        // Grid toggle
-        const gridBtn = document.getElementById('GridElement');
-        if (gridBtn) {
-            gridBtn.addEventListener('click', () => {
-                window.overlay.show = !window.overlay.show;
-                window.overlay.updateGridButtonState();
-            });
-        }
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+                this.closeHelp();
+            }
+        });
 
-        // Stone size
-        const stoneSizeInput = document.getElementById('StoneSize');
+        this.setupToolbarDrag();
+
+        const stoneSizeInput = document.getElementById("StoneSize");
         if (stoneSizeInput) {
-            stoneSizeInput.addEventListener('change', (e) => {
+            stoneSizeInput.addEventListener("change", (event) => {
                 if (window.overlay) {
-                    window.overlay.stones_radius = e.target.value;
+                    window.overlay.stones_radius = event.target.value;
                 }
             });
         }
 
-        // Reset grid
-        this.resetBtn = document.getElementById('ResetGrid');
-        if (this.resetBtn) {
-            this.resetBtn.addEventListener('click', () => {
-                window.overlay.isGridSet = false;
-                window.overlay.grid = [];
-                window.overlay.points = [];
-                window.overlay.stones = [];
-                window.overlay.boardStones = [];
-                window.overlay.updateGridButtonState();
-                if (window.updateShareableUrl) {
-                    window.updateShareableUrl();
-                }
-            });
-        }
-
-        // Update shareable URL on input changes and populate iframes
-        ['VideoURL', 'StoneSize', 'ObsVdoUrl', 'ChatUrl', 'coordinateColor', 'NetworkRoom'].forEach(id => {
+        [
+            "VideoURL",
+            "StoneSize",
+            "ObsVdoUrl",
+            "ChatUrl",
+            "coordinateColor",
+            "NetworkRoom",
+        ].forEach((id) => {
             const el = document.getElementById(id);
-            if (el) el.addEventListener('input', () => {
-                // Update URL
+            if (!el) return;
+
+            el.addEventListener("input", () => {
                 if (window.updateShareableUrl) {
                     window.updateShareableUrl();
                 }
-                
-                // Populate iframes based on input type
-                if (id === 'VideoURL') {
+
+                if (id === "VideoURL") {
                     const vdoLink = el.value.trim();
                     if (vdoLink) {
-                        // Use iframe manager to ensure proper audio settings
-                        if (this.iframeManager && this.iframeManager.ensureFeedAudioSettings) {
-                            const processedUrl = this.iframeManager.ensureFeedAudioSettings(vdoLink);
-                            document.getElementById('feed').src = processedUrl;
+                        if (
+                            this.iframeManager &&
+                            this.iframeManager.ensureFeedAudioSettings
+                        ) {
+                            const processedUrl = this.iframeManager
+                                .ensureFeedAudioSettings(vdoLink);
+                            document.getElementById("feed").src = processedUrl;
                         } else {
-                            document.getElementById('feed').src = vdoLink;
+                            document.getElementById("feed").src = vdoLink;
                         }
                     }
-                } else if (id === 'ObsVdoUrl') {
+                } else if (id === "ObsVdoUrl") {
                     const obsLink = el.value.trim();
                     if (obsLink) {
-                        document.getElementById('obs').src = obsLink;
-                        // Update side panel visibility
+                        document.getElementById("obs").src = obsLink;
                         if (window.updateSidePanelVisibility) {
                             window.updateSidePanelVisibility();
                         }
                     }
-                } else if (id === 'ChatUrl') {
+                } else if (id === "ChatUrl") {
                     const chatUrl = el.value.trim();
                     if (chatUrl) {
-                        document.getElementById('chat').src = chatUrl;
-                        // Update side panel visibility
+                        document.getElementById("chat").src = chatUrl;
                         if (window.updateSidePanelVisibility) {
                             window.updateSidePanelVisibility();
                         }
                     }
-                } else if (id === 'NetworkRoom') {
+                } else if (id === "NetworkRoom") {
                     const roomName = el.value.trim();
                     if (roomName && window.networkManager) {
-                        // Update network connection
                         window.networkManager.updateConnection(roomName);
                     }
-                } else if (id === 'coordinateColor') {
-                    // Send coordinate color change to viewer
+                } else if (id === "coordinateColor") {
                     if (window.networkManager && !window.isViewerMode) {
                         window.networkManager.send({
-                            action: 'coordinate-color',
+                            action: "coordinate-color",
                             color: el.value,
-                            timestamp: Date.now()
+                            timestamp: Date.now(),
                         });
-                        debug.log('🎨 Sent coordinate color to viewer:', el.value);
+                        debug.log(
+                            "dYZ\" Sent coordinate color to viewer:",
+                            el.value,
+                        );
                     }
                 }
             });
         });
 
-        // Copy Viewer URL (View)
-        const copyViewerUrlBtn = document.getElementById('copyViewerUrl');
+        const copyViewerUrlBtn = document.getElementById("copyViewerUrl");
         if (copyViewerUrlBtn) {
-            copyViewerUrlBtn.addEventListener('click', () => {
-                if (window.generateViewerUrl) {
-                    const url = window.generateViewerUrl();
-                    navigator.clipboard.writeText(url).then(() => {
-                        const originalText = copyViewerUrlBtn.textContent;
-                        copyViewerUrlBtn.textContent = 'Copied!';
-                        setTimeout(() => {
-                            copyViewerUrlBtn.textContent = originalText;
-                        }, 2000);
-                    });
-                }
-            });
-        }
+            copyViewerUrlBtn.addEventListener("click", () => {
+                const viewerUrlOutput = document.getElementById(
+                    "viewerUrlOutput",
+                );
+                const url = viewerUrlOutput?.value ||
+                    (window.generateViewerUrl
+                        ? window.generateViewerUrl()
+                        : "");
+                if (!url) return;
 
-        // Copy Share URL (Comm)
-        const copyShareUrlBtn = document.getElementById('copyShareUrl');
-        if (copyShareUrlBtn) {
-            copyShareUrlBtn.addEventListener('click', () => {
-                navigator.clipboard.writeText(window.location.href).then(() => {
-                    const originalText = copyShareUrlBtn.textContent;
-                    copyShareUrlBtn.textContent = 'Copied!';
+                navigator.clipboard.writeText(url).then(() => {
+                    const originalText = copyViewerUrlBtn.textContent;
+                    copyViewerUrlBtn.textContent = "Copied!";
                     setTimeout(() => {
-                        copyShareUrlBtn.textContent = originalText;
+                        copyViewerUrlBtn.textContent = originalText;
                     }, 2000);
+                }).catch(() => {
+                    window.prompt("Viewer URL:", url);
                 });
             });
         }
     }
 
-    togglePanel(type) {
-        const panels = {
-            'review': this.reviewPanel,
-            'settings': this.settingsPanel,
-            'obsControl': this.obsControlPanel
-        };
-        const buttons = {
-            'review': this.toggleReview,
-            'settings': this.toggleSettings,
-            'obsControl': this.toggleObsControl
-        };
-
-        const targetPanel = panels[type];
-        const targetBtn = buttons[type];
-
-        if (targetPanel.classList.contains('hidden')) {
-            // Hide all other panels
-            Object.values(panels).forEach(panel => {
-                if (panel && panel !== targetPanel) {
-                    panel.classList.add('hidden');
-                }
-            });
-            Object.values(buttons).forEach(btn => {
-                if (btn && btn !== targetBtn) {
-                    btn.classList.remove('active');
-                }
-            });
-            
-            // Show target panel
-            targetPanel.classList.remove('hidden');
-            targetBtn.classList.add('active');
-        } else {
-            // Hide target panel
-            targetPanel.classList.add('hidden');
-            targetBtn.classList.remove('active');
+    openHelp() {
+        if (!this.helpModal) return;
+        this.helpModal.classList.remove("hidden");
+        if (this.toggleHelp) {
+            this.toggleHelp.classList.add("active");
         }
+    }
+
+    closeHelp() {
+        if (!this.helpModal) return;
+        this.helpModal.classList.add("hidden");
+        if (this.toggleHelp) {
+            this.toggleHelp.classList.remove("active");
+        }
+    }
+
+    setupToolbarDrag() {
+        if (!this.toolbar || !this.toolbarHandle) return;
+
+        let dragging = false;
+        let offsetX = 0;
+        let offsetY = 0;
+
+        const onPointerMove = (event) => {
+            if (!dragging) return;
+            const targetLeft = event.clientX - offsetX;
+            const targetTop = event.clientY - offsetY;
+            const { left, top } = this.clampToolbarPosition(
+                targetLeft,
+                targetTop,
+            );
+            this.applyToolbarPosition(left, top);
+        };
+
+        const onPointerUp = (event) => {
+            dragging = false;
+            this.toolbar.classList.remove("dragging");
+            if (this.toolbarHandle.releasePointerCapture) {
+                this.toolbarHandle.releasePointerCapture(event.pointerId);
+            }
+            document.removeEventListener("pointermove", onPointerMove);
+            document.removeEventListener("pointerup", onPointerUp);
+        };
+
+        this.toolbarHandle.addEventListener("pointerdown", (event) => {
+            if (event.button !== 0 && event.pointerType !== "touch") {
+                return;
+            }
+            event.preventDefault();
+            const rect = this.toolbar.getBoundingClientRect();
+            offsetX = event.clientX - rect.left;
+            offsetY = event.clientY - rect.top;
+            dragging = true;
+            this.toolbar.classList.add("dragging");
+            if (this.toolbarHandle.setPointerCapture) {
+                this.toolbarHandle.setPointerCapture(event.pointerId);
+            }
+            document.addEventListener("pointermove", onPointerMove);
+            document.addEventListener("pointerup", onPointerUp);
+        });
+
+        window.addEventListener("resize", () => {
+            this.ensureToolbarInBounds();
+        });
+
+        this.ensureToolbarInBounds();
+    }
+
+    ensureToolbarInBounds() {
+        if (!this.toolbar) return;
+        const rect = this.toolbar.getBoundingClientRect();
+        const { left, top } = this.clampToolbarPosition(rect.left, rect.top);
+        this.applyToolbarPosition(left, top);
+    }
+
+    clampToolbarPosition(left, top) {
+        if (!this.toolbar) return { left, top };
+        const padding = 8;
+        const topBar = document.querySelector(".top-bar");
+        const topBarHeight = topBar ? topBar.getBoundingClientRect().height : 0;
+        const minTop = topBarHeight + padding;
+        const rect = this.toolbar.getBoundingClientRect();
+        const maxLeft = window.innerWidth - rect.width - padding;
+        const maxTop = window.innerHeight - rect.height - padding;
+        const clampedLeft = Math.min(
+            Math.max(left, padding),
+            Math.max(padding, maxLeft),
+        );
+        const clampedTop = Math.min(
+            Math.max(top, minTop),
+            Math.max(minTop, maxTop),
+        );
+        return { left: clampedLeft, top: clampedTop };
+    }
+
+    applyToolbarPosition(left, top) {
+        if (!this.toolbar) return;
+        this.toolbar.style.left = `${Math.round(left)}px`;
+        this.toolbar.style.top = `${Math.round(top)}px`;
+        this.toolbar.style.right = "auto";
+        this.toolbar.style.bottom = "auto";
     }
 }
