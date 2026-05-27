@@ -121,6 +121,11 @@ export class CommentatorSender {
                             command.x,
                             command.y,
                             command.color,
+                            command.ownerId || sender,
+                            {
+                                markerColor: command.markerColor,
+                                moveNumber: command.moveNumber,
+                            },
                         );
                     }
                 }
@@ -183,8 +188,9 @@ export class CommentatorSender {
                 if (window.overlay) window.overlay.clearStones();
                 break;
 
+            case "reset-grid":
             case "reset-board":
-                if (window.overlay) window.overlay.resetGrid();
+                if (window.overlay) window.overlay.resetGrid(false);
                 break;
 
             case "toggle-grid":

@@ -102,10 +102,6 @@ export class IframeManager {
         if (networkRoom) {
             params.set('Network', encodeURIComponent(networkRoom));
         }
-        const coordColor = document.getElementById('coordinateColor')?.value;
-        if (coordColor) {
-            params.set('CC', coordColor);
-        }
         const stoneSize = document.getElementById('StoneSize')?.value;
         if (stoneSize) {
             params.set('stone', stoneSize);

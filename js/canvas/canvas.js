@@ -22,6 +22,7 @@ export class Canvas {
         this.points = [];
         this.isGridSet = false;
         this.currentColorByOwner = new Map();
+        this.nextMoveNumberByOwner = new Map();
         this.letterStacksByOwner = new Map();
         this.stoneHistoryByOwner = new Map();
         this.redoHistoryByOwner = new Map();
@@ -56,41 +57,11 @@ export class Canvas {
             "LetterBtn": "LETTER",
         };
 
-        const drawingLayerElement = document.getElementById("drawingLayer");
-
         Object.entries(tools).forEach(([btnId, toolType]) => {
             const btn = document.getElementById(btnId);
             if (btn) {
                 btn.addEventListener("click", () => {
-                    document.querySelectorAll(".tool-btn").forEach((b) =>
-                        b.classList.remove("active")
-                    );
-                    btn.classList.add("active");
-                    currentTool = toolType;
-
-                    // Update global currentTool for drawing layer
-                    if (window.setCurrentTool) {
-                        window.setCurrentTool(toolType);
-                    }
-                    window.currentTool = toolType;
-
-                    // Toggle drawing layer interaction based on pen tool
-                    if (
-                        ["PEN"]
-                            .includes(toolType)
-                    ) {
-                        drawingLayerElement.classList.add("pen-active");
-                    } else {
-                        drawingLayerElement.classList.remove("pen-active");
-                    }
-
-                    // Send to viewer if network manager is available
-                    if (window.networkManager && !window.isViewerMode) {
-                        window.networkManager.send({
-                            action: "set-tool",
-                            tool: toolType,
-                        });
-                    }
+                    this.selectTool(toolType, true);
                 });
             }
         });
@@ -101,6 +72,47 @@ export class Canvas {
             markerToggle.addEventListener("change", () => {
                 const style = markerToggle.checked ? "triangle" : "numbers";
                 this.setMarkerStyle(style, true);
+            });
+        }
+    }
+
+    selectTool(tool, emitNetwork = true) {
+        currentTool = tool;
+        window.currentTool = tool;
+        if (window.setCurrentTool) {
+            window.setCurrentTool(tool);
+        }
+
+        document.querySelectorAll(".tool-btn").forEach((btn) =>
+            btn.classList.remove("active")
+        );
+
+        const toolButtons = {
+            "BLACK": "BlackStoneBtn",
+            "WHITE": "WhiteStoneBtn",
+            "ALTERNATING": "AlternatingBtn",
+            "PEN": "PenBtn",
+            "TRIANGLE": "TriangleBtn",
+            "CIRCLE": "CircleBtn",
+            "SQUARE": "SquareBtn",
+            "LETTER": "LetterBtn",
+        };
+        const activeButton = document.getElementById(toolButtons[tool]);
+        if (activeButton) activeButton.classList.add("active");
+
+        const drawingLayerElement = document.getElementById("drawingLayer");
+        if (drawingLayerElement) {
+            if (tool === "PEN") {
+                drawingLayerElement.classList.add("pen-active");
+            } else {
+                drawingLayerElement.classList.remove("pen-active");
+            }
+        }
+
+        if (emitNetwork && window.networkManager && !window.isViewerMode) {
+            window.networkManager.send({
+                action: "set-tool",
+                tool: tool,
             });
         }
     }
@@ -130,9 +142,32 @@ export class Canvas {
         return this.redoHistoryByOwner.get(ownerId);
     }
 
-    recordStonePlacement(ownerId, x, y, color, markerColor) {
+    getNextMoveNumber(ownerId) {
+        if (!this.nextMoveNumberByOwner.has(ownerId)) {
+            this.nextMoveNumberByOwner.set(ownerId, 1);
+        }
+        const next = this.nextMoveNumberByOwner.get(ownerId);
+        this.nextMoveNumberByOwner.set(ownerId, next + 1);
+        return next;
+    }
+
+    reserveMoveNumber(ownerId, moveNumber) {
+        if (!moveNumber) return;
+        const next = this.nextMoveNumberByOwner.get(ownerId) || 1;
+        if (moveNumber >= next) {
+            this.nextMoveNumberByOwner.set(ownerId, moveNumber + 1);
+        }
+    }
+
+    recordStonePlacement(ownerId, x, y, color, markerColor, moveNumber) {
         const history = this.getOwnerHistory(ownerId);
-        history.push({ x: x, y: y, color: color, markerColor: markerColor });
+        history.push({
+            x: x,
+            y: y,
+            color: color,
+            markerColor: markerColor,
+            moveNumber: moveNumber,
+        });
     }
 
     undoLastStone(ownerId = null, emitNetwork = true) {
@@ -171,6 +206,7 @@ export class Canvas {
             recordHistory: true,
             clearRedo: false,
             markerColor: next.markerColor,
+            moveNumber: next.moveNumber,
         });
 
         if (emitNetwork && window.networkManager && !window.isViewerMode) {
@@ -253,6 +289,7 @@ export class Canvas {
         this.boardStonesByOwner.delete(ownerId);
         this.stoneHistoryByOwner.delete(ownerId);
         this.redoHistoryByOwner.delete(ownerId);
+        this.nextMoveNumberByOwner.delete(ownerId);
         this.resetLetterStack(ownerId, true);
         this.clearCanvas();
     }
@@ -431,6 +468,7 @@ export class Canvas {
         this.updateStonesRadius();
         this.clearCanvas();
         this.drawGrid();
+        this.drawPendingGridCorners();
         // Draw board stones first (as background)
         this.boardStonesByOwner.forEach((stones) => {
             stones.forEach((stone) => {
@@ -447,6 +485,25 @@ export class Canvas {
 
         // Draw hover stone if applicable
         this.drawHoverStone();
+    }
+
+    drawPendingGridCorners() {
+        if (window.isViewerMode || this.isGridSet || !this.points.length) return;
+
+        const pulse = (Math.sin(performance.now() / 180) + 1) / 2;
+        const radius = 4 + pulse * 2;
+
+        this.context.save();
+        this.context.fillStyle = "#ff2a2a";
+        this.context.strokeStyle = "rgba(255, 255, 255, 0.85)";
+        this.context.lineWidth = 1.5;
+        this.points.forEach(([x, y]) => {
+            this.context.beginPath();
+            this.context.arc(x, y, radius, 0, Math.PI * 2);
+            this.context.fill();
+            this.context.stroke();
+        });
+        this.context.restore();
     }
 
     drawHoverStone() {
@@ -550,12 +607,11 @@ export class Canvas {
                     "T",
                 ]; // Go skips 'I'
                 this.context.save();
-                this.context.font = `${24 * this.getScalingFactor()}px Arial`;
-
-                // Get coordinate color from coordinate color picker, fallback to white
-                const colorInput = document.getElementById("coordinateColor");
-                const coordinateColor = colorInput ? colorInput.value : "black";
-                this.context.fillStyle = coordinateColor;
+                this.context.font = `bold ${24 * this.getScalingFactor()}px Arial`;
+                this.context.fillStyle = "white";
+                this.context.strokeStyle = "black";
+                this.context.lineWidth = 4 * this.getScalingFactor();
+                this.context.lineJoin = "round";
 
                 this.context.textAlign = "center";
                 this.context.textBaseline = "middle";
@@ -570,6 +626,11 @@ export class Canvas {
                             pt[1],
                         );
                         // Place label above the first row
+                        this.context.strokeText(
+                            colLabels[j],
+                            scaledX,
+                            scaledY - 32 * this.getScalingFactor(),
+                        );
                         this.context.fillText(
                             colLabels[j],
                             scaledX,
@@ -588,6 +649,11 @@ export class Canvas {
                         );
                         // Place label to the left of the first column
                         this.context.textAlign = "right";
+                        this.context.strokeText(
+                            (i + 1).toString(),
+                            scaledX - 24 * this.getScalingFactor(),
+                            scaledY,
+                        );
                         this.context.fillText(
                             (i + 1).toString(),
                             scaledX - 24 * this.getScalingFactor(),
@@ -713,7 +779,7 @@ export class Canvas {
         this.context.textAlign = "center";
         this.context.textBaseline = "middle";
 
-        this.context.fillText(index + 1, scaledX, scaledY);
+        this.context.fillText(stone.moveNumber || index + 1, scaledX, scaledY);
     }
 
     drawTriangleMarker(x, y, stoneSize, color) {
@@ -987,7 +1053,7 @@ export class Canvas {
                         }
                     } else {
                         // Different color - replace the stone
-                        this.placeStone(
+                        const placedStone = this.placeStone(
                             point[0],
                             point[1],
                             currentTool === "BLACK" ||
@@ -1019,6 +1085,7 @@ export class Canvas {
                                     : "WHITE",
                                 ownerId: ownerId,
                                 markerColor: markerColor,
+                                moveNumber: placedStone?.moveNumber,
                             });
 
                             // Also send grid
@@ -1048,7 +1115,7 @@ export class Canvas {
                             : STONES.WHITE;
                     }
 
-                    this.placeStone(
+                    const placedStone = this.placeStone(
                         point[0],
                         point[1],
                         currentTool === "BLACK" ||
@@ -1078,6 +1145,7 @@ export class Canvas {
                                 : "WHITE",
                             ownerId: ownerId,
                             markerColor: markerColor,
+                            moveNumber: placedStone?.moveNumber,
                         });
 
                         // Also send grid
@@ -1265,9 +1333,11 @@ export class Canvas {
         if (event.code === "KeyR") {
             this.resetGrid();
             event.preventDefault();
+            event.stopImmediatePropagation();
         } else if (event.code === "KeyQ") {
             this.switchCurrentColor(this.getLocalOwnerId());
             event.preventDefault();
+            event.stopImmediatePropagation();
         }
     }
 
@@ -1276,6 +1346,7 @@ export class Canvas {
         this.boardStonesByOwner.clear();
         this.stoneHistoryByOwner.clear();
         this.redoHistoryByOwner.clear();
+        this.nextMoveNumberByOwner.clear();
         this.resetAllLetterStacks();
         this.clearCanvas();
 
@@ -1412,23 +1483,36 @@ export class Canvas {
         return closestPoint;
     }
 
-    resetGrid() {
+    resetGrid(emitNetwork = true) {
         this.isGridSet = false;
         this.grid = [];
         this.points = [];
         this.stonesByOwner.clear();
         this.boardStonesByOwner.clear();
+        this.stoneHistoryByOwner.clear();
+        this.redoHistoryByOwner.clear();
+        this.currentColorByOwner.clear();
+        this.nextMoveNumberByOwner.clear();
         this.resetAllLetterStacks();
+        if (window.drawingLayer && window.drawingLayer.clearCanvas) {
+            window.drawingLayer.clearCanvas(false);
+        }
+        this.selectTool("ALTERNATING", false);
         this.updateGridButtonState();
         if (window.updateShareableUrl) {
             window.updateShareableUrl();
         }
 
         // Send to viewer if network manager is available
-        if (window.networkManager && !window.isViewerMode) {
-            window.networkManager.send({
-                action: "reset-grid",
-            });
+        if (emitNetwork && window.networkManager && !window.isViewerMode) {
+            const now = Date.now();
+            if (!this.lastResetSentAt || now - this.lastResetSentAt > 50) {
+                this.lastResetSentAt = now;
+                window.networkManager.send({
+                    action: "reset-grid",
+                    timestamp: now,
+                });
+            }
         }
     }
 
@@ -1461,13 +1545,18 @@ export class Canvas {
             }
         }
 
-        ownerStones.push({
+        const moveNumber = options.moveNumber || this.getNextMoveNumber(targetOwner);
+        this.reserveMoveNumber(targetOwner, moveNumber);
+
+        const placedStone = {
             x: x,
             y: y,
             color: STONES[color],
             ownerId: targetOwner,
             markerColor: resolvedMarkerColor,
-        });
+            moveNumber: moveNumber,
+        };
+        ownerStones.push(placedStone);
 
         if (recordHistory && (color === "BLACK" || color === "WHITE")) {
             this.recordStonePlacement(
@@ -1476,12 +1565,14 @@ export class Canvas {
                 y,
                 color,
                 resolvedMarkerColor,
+                moveNumber,
             );
         }
         if (clearRedo) {
             const redoHistory = this.getOwnerRedoHistory(targetOwner);
             redoHistory.length = 0;
         }
+        return placedStone;
     }
 
     removeStone(x, y, ownerId = null) {

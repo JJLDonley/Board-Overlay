@@ -13,6 +13,11 @@ export class PeerController {
         this.cursors = new Map();
         this.ownerMeta = new Map();
         this.activeDrawPaths = new Map();
+        this.commandBuffer = [];
+        this.commandFlushTimer = null;
+        this.processedCommandIds = new Set();
+        this.commandSequence = 0;
+        this.lastResetTimestamp = 0;
 
         this.lerpSpeed = 0.3;
         this.ownerId = this.generateUUID();
@@ -129,6 +134,11 @@ export class PeerController {
             command.timestamp = Date.now();
         }
 
+        if (!command.commandId) {
+            this.commandSequence += 1;
+            command.commandId = `${this.ownerId}:${command.timestamp}:${this.commandSequence}`;
+        }
+
         if (!command.ownerId) {
             command.ownerId = this.ownerId;
         }
@@ -149,7 +159,70 @@ export class PeerController {
             return;
         }
 
-        this.processCommand(payload, sender);
+        this.queueCommand(payload, sender);
+    }
+
+    queueCommand(command, sender) {
+        const timestamp = Number(command.timestamp) || Date.now();
+        this.commandBuffer.push({
+            command: { ...command, timestamp },
+            sender,
+            receivedAt: Date.now(),
+        });
+
+        if (!this.commandFlushTimer) {
+            this.commandFlushTimer = setTimeout(() => {
+                this.flushCommandBuffer();
+            }, 100);
+        }
+    }
+
+    flushCommandBuffer() {
+        this.commandFlushTimer = null;
+        const pending = this.commandBuffer.splice(0).sort((a, b) =>
+            a.command.timestamp - b.command.timestamp || a.receivedAt - b.receivedAt
+        );
+
+        pending.forEach(({ command, sender }) => {
+            if (command.commandId) {
+                if (this.processedCommandIds.has(command.commandId)) return;
+                this.processedCommandIds.add(command.commandId);
+                if (this.processedCommandIds.size > 1000) {
+                    this.processedCommandIds.delete(
+                        this.processedCommandIds.values().next().value,
+                    );
+                }
+            }
+
+            if (command.action === "reset-grid" || command.action === "reset-board") {
+                this.lastResetTimestamp = Math.max(
+                    this.lastResetTimestamp,
+                    command.timestamp,
+                );
+            } else if (this.isStaleAfterReset(command)) {
+                debug.log("Skipping stale command after reset:", command.action);
+                return;
+            }
+
+            this.processCommand(command, sender);
+        });
+    }
+
+    isStaleAfterReset(command) {
+        const resetInvalidates = new Set([
+            "set-grid",
+            "place-stone",
+            "remove-stone",
+            "add-mark",
+            "draw-start",
+            "draw-batch",
+            "draw-end",
+            "undo-stone",
+            "redo-stone",
+            "set-tool",
+        ]);
+        return resetInvalidates.has(command.action) &&
+            command.timestamp < this.lastResetTimestamp;
     }
 
     processCommand(command, sender) {
@@ -176,6 +249,7 @@ export class PeerController {
                     command.color,
                     ownerId,
                     command.markerColor,
+                    command.moveNumber,
                 );
                 break;
 
@@ -232,10 +306,6 @@ export class PeerController {
                 );
                 break;
 
-            case "coordinate-color":
-                this.updateCoordinateColor(command.color);
-                break;
-
             case "stone-marker-style":
                 if (window.overlay && window.overlay.setMarkerStyle) {
                     window.overlay.setMarkerStyle(command.style, false);
@@ -276,14 +346,6 @@ export class PeerController {
         }
     }
 
-    updateCoordinateColor(color) {
-        if (!color) return;
-        const coordInput = document.getElementById("coordinateColor");
-        if (coordInput) {
-            coordInput.value = color;
-        }
-    }
-
     setGrid(points) {
         if (window.overlay && points && points.length === 4) {
             window.overlay.points = points;
@@ -299,8 +361,9 @@ export class PeerController {
     }
 
     resetBoard() {
+        this.activeDrawPaths.clear();
         if (window.overlay && window.overlay.resetGrid) {
-            window.overlay.resetGrid();
+            window.overlay.resetGrid(false);
         }
     }
 
@@ -315,7 +378,7 @@ export class PeerController {
         window.overlay.updateGridButtonState();
     }
 
-    placeStone(x, y, color, ownerId, markerColor = null) {
+    placeStone(x, y, color, ownerId, markerColor = null, moveNumber = null) {
         if (!window.overlay) return;
 
         if (color === "BOARD" || color === "REMOVE_BOARD") {
@@ -325,6 +388,7 @@ export class PeerController {
 
         window.overlay.placeStone(x, y, color, ownerId, {
             markerColor: markerColor,
+            moveNumber: moveNumber,
         });
     }
 
@@ -683,6 +747,7 @@ export class PeerController {
                 y: stone.y,
                 color: colorName,
                 markerColor: stone.markerColor || null,
+                moveNumber: stone.moveNumber || null,
             });
         });
 

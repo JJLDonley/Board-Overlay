@@ -86,15 +86,50 @@ function buildBaseParams() {
         params.set("Network", encodeURIComponent(networkRoom));
     }
 
-    const coordColor = document.getElementById("coordinateColor")?.value;
-    if (coordColor) {
-        params.set("CC", coordColor);
-    }
-
     return params;
 }
 
 const MAX_HOST_SLOTS = 2;
+
+function generateDailyNetworkName(date = new Date()) {
+    const dateKey = Number(
+        `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`,
+    );
+    let seed = Math.floor(dateKey * Math.PI * 1000000) >>> 0;
+    const words = [
+        "hoshi",
+        "tesuji",
+        "sente",
+        "gote",
+        "kikashi",
+        "sabaki",
+        "moyo",
+        "joseki",
+        "atari",
+        "ko",
+        "yose",
+        "fuseki",
+        "hane",
+        "nobi",
+        "keima",
+        "shimari",
+    ];
+
+    const next = () => {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        return seed;
+    };
+
+    const picked = Array.from({ length: 3 }, () => words[next() % words.length]);
+    const suffix = (next() % 46656).toString(36).padStart(3, "0");
+    return `baduk-${picked.join("-")}-${suffix}`;
+}
+
+function ensureDefaultNetworkRoom() {
+    const input = document.getElementById("NetworkRoom");
+    if (!input || input.value.trim()) return;
+    input.value = generateDailyNetworkName();
+}
 
 function generateHostUrl(hostIndex) {
     const baseUrl = new URL(window.location.origin + window.location.pathname);
@@ -102,7 +137,7 @@ function generateHostUrl(hostIndex) {
 
     params.set("role", "CO");
     params.set("host", hostIndex.toString());
-    params.set("name_hint", "EnterNameNoSpaces");
+    params.set("name_hint", "Enter commentator name");
     params.set("name_required", "1");
 
     baseUrl.search = params.toString();
@@ -258,7 +293,7 @@ function updateShareableUrl() {
     const params = buildBaseParams();
 
     if (window.cursorLabel) {
-        params.set("label", encodeURIComponent(window.cursorLabel));
+        params.set("label", window.cursorLabel);
     }
 
     params.set("role", window.isViewerMode ? "VW" : "CO");
@@ -351,13 +386,6 @@ function loadConfigFromUrl() {
         if (stoneSizeInput) stoneSizeInput.value = stoneSize;
     }
 
-    // Coordinate color
-    const coordColor = params.get("CC");
-    if (coordColor) {
-        const coordColorInput = document.getElementById("coordinateColor");
-        if (coordColorInput) coordColorInput.value = coordColor;
-    }
-
     // Grid corners
     const grid = params.get("grid");
     if (grid && window.overlay) {
@@ -393,12 +421,28 @@ function getHostTagFromParams(params) {
     return `Host ${hostIndex}`;
 }
 
+function decodeLabelParam(value) {
+    if (!value) return "";
+    let decoded = value.replace(/\+/g, " ");
+    for (let i = 0; i < 3 && decoded.includes("%"); i++) {
+        try {
+            const next = decodeURIComponent(decoded);
+            if (next === decoded) break;
+            decoded = next;
+        } catch (error) {
+            debug.warn("Failed to decode label:", decoded);
+            break;
+        }
+    }
+    return decoded.trim().replace(/\s+/g, " ");
+}
+
 function sanitizeName(value) {
-    return value.replace(/\s+/g, "");
+    return value.trim().replace(/\s+/g, " ");
 }
 
 function isValidName(value) {
-    return Boolean(value) && !/\s/.test(value);
+    return Boolean(value && value.trim());
 }
 
 function requestUserName(options = {}) {
@@ -410,10 +454,10 @@ function requestUserName(options = {}) {
         return Promise.resolve(null);
     }
 
-    const hint = options.hint || "EnterNameNoSpaces";
+    const hint = options.hint || "Enter commentator name";
     const saved = options.saved || "";
     input.placeholder = hint;
-    input.value = sanitizeName(saved);
+    input.value = saved;
     errorEl.textContent = "";
 
     const validate = () => {
@@ -423,21 +467,11 @@ function requestUserName(options = {}) {
             confirmBtn.disabled = true;
             return;
         }
-        if (!isValidName(value)) {
-            errorEl.textContent = "No spaces allowed.";
-            confirmBtn.disabled = true;
-            return;
-        }
         errorEl.textContent = "";
         confirmBtn.disabled = false;
     };
 
     const handleInput = () => {
-        const cleaned = sanitizeName(input.value);
-        if (cleaned !== input.value) {
-            input.value = cleaned;
-            errorEl.textContent = "Spaces removed.";
-        }
         validate();
     };
 
@@ -448,7 +482,7 @@ function requestUserName(options = {}) {
 
     return new Promise((resolve) => {
         const handleConfirm = () => {
-            const value = input.value.trim();
+            const value = sanitizeName(input.value);
             if (!isValidName(value)) {
                 validate();
                 return;
@@ -498,21 +532,11 @@ async function handleUserLabel() {
         window.hostIndex = parseInt(params.get("host"), 10);
     }
 
-    let label = params.get("label");
-    if (label && label.includes("%")) {
-        try {
-            label = decodeURIComponent(label);
-        } catch (error) {
-            debug.warn("Failed to decode label:", label);
-        }
-    }
-    if (label) {
-        label = label.trim();
-    }
+    let label = decodeLabelParam(params.get("label") || "");
 
     if (!isValidName(label || "")) {
         const savedLabel = localStorage.getItem("userLabel") || "";
-        const hint = params.get("name_hint") || "EnterNameNoSpaces";
+        const hint = decodeLabelParam(params.get("name_hint") || "Enter commentator name");
         label = await requestUserName({
             hint: hint,
             saved: savedLabel,
@@ -718,6 +742,7 @@ function main() {
         window.networkManager = networkManager;
 
         loadConfigFromUrl();
+        ensureDefaultNetworkRoom();
 
         setupHostSlots();
         updateLandingLinks();

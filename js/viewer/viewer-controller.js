@@ -260,7 +260,7 @@ export class ViewerController {
 
     resetBoard() {
         if (window.overlay && window.overlay.resetGrid) {
-            window.overlay.resetGrid();
+            window.overlay.resetGrid(false);
             debug.log("🔄 Reset board");
         }
     }

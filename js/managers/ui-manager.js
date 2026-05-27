@@ -55,7 +55,6 @@ export class UIManager {
             "StoneSize",
             "ObsVdoUrl",
             "ChatUrl",
-            "coordinateColor",
             "NetworkRoom",
         ].forEach((id) => {
             const el = document.getElementById(id);
@@ -100,18 +99,6 @@ export class UIManager {
                     const roomName = el.value.trim();
                     if (roomName && window.networkManager) {
                         window.networkManager.updateConnection(roomName);
-                    }
-                } else if (id === "coordinateColor") {
-                    if (window.networkManager && !window.isViewerMode) {
-                        window.networkManager.send({
-                            action: "coordinate-color",
-                            color: el.value,
-                            timestamp: Date.now(),
-                        });
-                        debug.log(
-                            "dYZ\" Sent coordinate color to viewer:",
-                            el.value,
-                        );
                     }
                 }
             });
